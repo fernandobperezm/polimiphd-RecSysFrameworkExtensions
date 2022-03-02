@@ -26,6 +26,7 @@ attrs = "^21.4.0"
 holoviews = "^1.14.8"
 numpy = "^1.22.2"
 pandas = "^1.4.1"
+scipy = "^1.8.0"
 
 [tool.poetry.dev-dependencies]
 mypy = "^0.931"
