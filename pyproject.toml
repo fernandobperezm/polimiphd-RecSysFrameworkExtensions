@@ -1,3 +1,8 @@
+[logs]
+dir_name = "logs"
+file_name = "recsys_framework_extensions.log"
+formatter = "%(process)d|%(asctime)s|%(levelname)s|%(module)s|%(funcName)s|%(lineno)d|%(message)s"
+
 [tool.mypy]
 python_version = "~3.9"
 ignore_missing_imports = true
@@ -11,7 +16,7 @@ packages = [
     { include = "recsys_framework_extensions" }, # Include the recsys_framework_extensions folder as a package.
 ]
 exclude = [
-    { path = "build/*" }, # Include compiled cython code in the wheel and tar.gz. given that we already copy it.
+    { path = "build/*" },
 ]
 
 [tool.poetry.dependencies]
@@ -25,6 +30,9 @@ pandas = "^1.4.1"
 [tool.poetry.dev-dependencies]
 mypy = "^0.931"
 types-toml = "^0.10.4"
+
+[tool.poetry.build]
+generate-setup-file = true
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
