@@ -1,13 +1,30 @@
+[tool.mypy]
+python_version = "~3.9"
+ignore_missing_imports = true
+
 [tool.poetry]
-name = "recsys-framework-extensions"
+name = "recsys_framework_extensions"
 version = "0.1.0"
 description = ""
 authors = ["Fernando Benjamín PÉREZ MAURERA <fperezmaurera@gmail.com>"]
+packages = [
+    { include = "recsys_framework_extensions" }, # Include the recsys_framework_extensions folder as a package.
+]
+exclude = [
+    { path = "build/*" }, # Include compiled cython code in the wheel and tar.gz. given that we already copy it.
+]
 
 [tool.poetry.dependencies]
 python = "~3.9"
+dask = { extras = ["complete"], version = "^2022.2.1" }
+attrs = "^21.4.0"
+holoviews = "^1.14.8"
+numpy = "^1.22.2"
+pandas = "^1.4.1"
 
 [tool.poetry.dev-dependencies]
+mypy = "^0.931"
+types-toml = "^0.10.4"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
