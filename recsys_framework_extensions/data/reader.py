@@ -3,7 +3,8 @@ import traceback
 from abc import ABC, abstractmethod
 
 from recsys_framework.Data_manager.DataReader import DataReader
-from .dataset import BaseDataset
+
+from recsys_framework_extensions.dataset import BaseDataset
 
 
 class BaseDataReader(DataReader, ABC):

@@ -4,7 +4,7 @@ import time
 
 from typing import cast, Any, Callable, TypeVar
 
-from ..logging import get_logger
+from recsys_framework_extensions.logging import get_logger
 
 logger = get_logger(__name__)
 

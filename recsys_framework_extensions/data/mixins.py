@@ -13,7 +13,7 @@ from recsys_framework.Data_manager.DataReader_utils import compute_density
 from recsys_framework.Data_manager.Dataset import gini_index
 from recsys_framework.Recommenders.DataIO import DataIO
 
-from ..evaluation import EvaluationStrategy
+from recsys_framework_extensions.evaluation import EvaluationStrategy
 
 
 class ParquetDataMixin:
@@ -291,7 +291,7 @@ class InteractionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
         # Check if every non-empty user and item has a mapper value
         URM_all = sp.csc_matrix(urm_all)
         nonzero_items_mask = np.ediff1d(URM_all.indptr) > 0
-        nonzero_items = np.arange(0, num_items, dtype=np.int)[nonzero_items_mask]
+        nonzero_items = np.arange(0, num_items, dtype=np.int32)[nonzero_items_mask]
 
         if not np.isin(
             nonzero_items,
@@ -303,7 +303,7 @@ class InteractionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
 
         URM_all = sp.csr_matrix(urm_all)
         nonzero_users_mask = np.ediff1d(URM_all.indptr) > 0
-        nonzero_users = np.arange(0, num_users, dtype=np.int)[nonzero_users_mask]
+        nonzero_users = np.arange(0, num_users, dtype=np.int32)[nonzero_users_mask]
         if not np.isin(
             nonzero_users,
             np.array(list(self.mapper_user_original_id_to_index.values()))

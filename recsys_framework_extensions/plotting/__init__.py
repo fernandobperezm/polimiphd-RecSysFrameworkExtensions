@@ -14,7 +14,7 @@ import scipy.sparse as sp
 import seaborn as sns
 
 from recsys_framework.Utils.ResultFolderLoader import ResultFolderLoader
-from ..logging import get_logger
+from recsys_framework_extensions.logging import get_logger
 
 import matplotlib
 

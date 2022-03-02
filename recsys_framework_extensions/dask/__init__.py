@@ -9,7 +9,7 @@ import toml
 from dask.distributed import Client, LocalCluster
 from distributed import Scheduler, Future, as_completed
 
-from recsys_framework.Utils.conf_logging import get_logger
+from recsys_framework_extensions.logging import get_logger
 
 logger = get_logger(__name__)
 

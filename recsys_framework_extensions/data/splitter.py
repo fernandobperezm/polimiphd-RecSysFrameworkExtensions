@@ -3,7 +3,7 @@ from typing import Any, cast, Literal, Optional, Callable
 import numpy as np
 import pandas as pd
 
-from ..logging import get_logger
+from recsys_framework_extensions.logging import get_logger
 
 logger = get_logger(
     logger_name=__file__,
