@@ -6,13 +6,13 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 import scipy.stats as st
-from scipy.stats._stats_py import DescribeResult
+from scipy.stats.stats import DescribeResult
 from tqdm import tqdm
 
-from recsys_framework.Data_manager.DataReader_utils import compute_density
-from recsys_framework.Data_manager.Dataset import gini_index
-from recsys_framework.Recommenders.DataIO import DataIO
+from Data_manager.DataReader_utils import compute_density
+from Data_manager.Dataset import gini_index
 
+from recsys_framework_extensions.data.io import DataIO
 from recsys_framework_extensions.evaluation import EvaluationStrategy
 
 

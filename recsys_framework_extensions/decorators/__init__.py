@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import time
 
 from typing import cast, Any, Callable, TypeVar
@@ -11,6 +12,12 @@ logger = get_logger(__name__)
 T_F = TypeVar('T_F', bound=Callable[..., Any])
 T_ARGS = TypeVar('T_ARGS', bound=tuple[Any])
 T_KWARGS = TypeVar('T_KWARGS', bound=dict[str, Any])
+
+
+def typed_cache(
+    user_function: Callable[..., T_F]
+) -> Callable[..., T_F]:
+    return functools.cache(user_function)
 
 
 def timeit(func: T_F) -> T_F:

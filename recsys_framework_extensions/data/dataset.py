@@ -2,7 +2,7 @@ from typing import Any
 
 import scipy.sparse as sp
 
-from .mixins import ImpressionsMixin, InteractionsMixin
+from recsys_framework_extensions.data.mixins import ImpressionsMixin, InteractionsMixin
 
 
 class BaseDataset(ImpressionsMixin, InteractionsMixin):

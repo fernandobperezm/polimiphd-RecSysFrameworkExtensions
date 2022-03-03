@@ -8,7 +8,7 @@ python_version = "~3.9"
 ignore_missing_imports = true
 
 [tool.poetry]
-name = "recsys_framework_extensions"
+name = "recsys-framework-extensions"
 version = "0.1.0"
 description = ""
 authors = ["Fernando Benjamín PÉREZ MAURERA <fperezmaurera@gmail.com>"]
@@ -21,7 +21,8 @@ exclude = [
 
 [tool.poetry.dependencies]
 python = "~3.9"
-recsys_framework = { path = "../poetry-recsys-framework/", develop = false }  # Use this when publishing the repo.
+#recsys-framework-public = { path = "../RecSysFramework_public/", develop = false }  # Use this when publishing the repo.
+recsys-framework-public = { git = "https://github.com/fernandobperezm/RecSysFramework_public.git", branch = "poetry_building" }
 dask = { extras = ["complete"], version = "^2022.2.1" }
 attrs = "^21.4.0"
 holoviews = "^1.14.8"

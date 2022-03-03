@@ -2,12 +2,18 @@ import os
 import traceback
 from abc import ABC, abstractmethod
 
-from recsys_framework.Data_manager.DataReader import DataReader
+from Data_manager.DataReader import DataReader as FrameworkDataReader
 
-from recsys_framework_extensions.dataset import BaseDataset
+from recsys_framework_extensions.data.dataset import BaseDataset
+from recsys_framework_extensions.logging import get_logger
 
 
-class BaseDataReader(DataReader, ABC):
+logger = get_logger(
+    logger_name=__file__,
+)
+
+
+class DataReader(FrameworkDataReader, ABC):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -35,43 +41,43 @@ class BaseDataReader(DataReader, ABC):
                 loaded_dataset = BaseDataset.empty_dataset()
                 loaded_dataset.load_data(save_folder_path)
 
-                self._print("Verifying data consistency...")
+                logger.info("Verifying data consistency...")
                 loaded_dataset.verify_data_consistency()
-                self._print("Verifying data consistency... Passed!")
+                logger.info("Verifying data consistency... Passed!")
 
                 loaded_dataset.print_statistics()
                 return loaded_dataset
 
             except FileNotFoundError:
 
-                self._print("Preloaded data not found, reading from original files...")
+                logger.info("Preloaded data not found, reading from original files...")
 
             except Exception:
 
-                self._print("Reading split from {} caused the following exception...".format(save_folder_path))
+                logger.info("Reading split from {} caused the following exception...".format(save_folder_path))
                 traceback.print_exc()
                 raise Exception("{}: Exception while reading split".format(self._get_dataset_name()))
 
-        self._print("Loading original data")
+        logger.info("Loading original data")
         loaded_dataset = self._load_from_original_file()
 
-        self._print("Verifying data consistency...")
+        logger.info("Verifying data consistency...")
         loaded_dataset.verify_data_consistency()
-        self._print("Verifying data consistency... Passed!")
+        logger.info("Verifying data consistency... Passed!")
 
         if save_folder_path not in [False]:
 
             # If directory does not exist, create
             if not os.path.exists(save_folder_path):
-                self._print("Creating folder '{}'".format(save_folder_path))
+                logger.info("Creating folder '{}'".format(save_folder_path))
                 os.makedirs(save_folder_path)
 
             else:
-                self._print("Found already existing folder '{}'".format(save_folder_path))
+                logger.info("Found already existing folder '{}'".format(save_folder_path))
 
             loaded_dataset.save_data(save_folder_path)
 
-            self._print("Saving complete!")
+            logger.info("Saving complete!")
 
         loaded_dataset.print_statistics()
         return loaded_dataset
