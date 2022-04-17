@@ -38,14 +38,14 @@ class DataReader(FrameworkDataReader, ABC):
         if save_folder_path is not False and not self.reload_from_original_data:
 
             try:
-                loaded_dataset = BaseDataset.empty_dataset()
+                loaded_dataset = BaseDataset()
                 loaded_dataset.load_data(save_folder_path)
 
                 logger.info("Verifying data consistency...")
-                loaded_dataset.verify_data_consistency()
+                # loaded_dataset.verify_data_consistency()
                 logger.info("Verifying data consistency... Passed!")
 
-                loaded_dataset.print_statistics()
+                # loaded_dataset.print_statistics()
                 return loaded_dataset
 
             except FileNotFoundError:
@@ -62,7 +62,7 @@ class DataReader(FrameworkDataReader, ABC):
         loaded_dataset = self._load_from_original_file()
 
         logger.info("Verifying data consistency...")
-        loaded_dataset.verify_data_consistency()
+        # loaded_dataset.verify_data_consistency()
         logger.info("Verifying data consistency... Passed!")
 
         if save_folder_path not in [False]:
@@ -79,5 +79,5 @@ class DataReader(FrameworkDataReader, ABC):
 
             logger.info("Saving complete!")
 
-        loaded_dataset.print_statistics()
+        # loaded_dataset.print_statistics()
         return loaded_dataset
