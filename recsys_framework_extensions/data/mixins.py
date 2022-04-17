@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 import scipy.stats as st
+
+from functools import cached_property
 from scipy.stats.stats import DescribeResult
 from tqdm import tqdm
 
@@ -14,6 +16,139 @@ from Data_manager.Dataset import gini_index
 
 from recsys_framework_extensions.data.io import DataIO
 from recsys_framework_extensions.evaluation import EvaluationStrategy
+from recsys_framework_extensions.logging import get_logger
+
+logger = get_logger(
+    logger_name=__file__,
+)
+
+
+class DataIOMixin:
+    def load_from_data_io(
+        self,
+        file_name: str,
+        folder_path: str,
+        to_dict_func: Callable[[], dict],
+    ) -> dict:
+        dict_data: dict
+
+        file_exists = DataIO.s_file_exists(
+            folder_path=folder_path,
+            file_name=file_name,
+        )
+
+        if not file_exists:
+            dict_data = to_dict_func()
+
+            DataIO.s_save_data(
+                folder_path=folder_path,
+                file_name=file_name,
+                data_dict_to_save=dict_data
+            )
+
+        else:
+            dict_data = DataIO.s_load_data(
+                folder_path=folder_path,
+                file_name=file_name,
+            )
+
+        return dict_data
+
+
+class NumpyPandasDataMixin:
+    encoding = "ASCII"
+    allow_pickle = True  # Loading impressions (arrays of arrays) require allow_pickle=True
+
+    def _to_numpy(
+        self,
+        df: pd.DataFrame,
+        file_path: str,
+    ) -> None:
+        np.savez(
+            file=file_path,
+            index=df.index.to_numpy(copy=False),
+            **{
+                col: df[col].to_numpy(copy=False)
+                for col in df.columns
+            },
+        )
+
+    def load_from_numpy(
+        self,
+        file_path: str,
+        to_pandas_func: Callable[[], pd.DataFrame],
+    ) -> pd.DataFrame:
+        df_data: pd.DataFrame
+
+        if not os.path.exists(file_path):
+            df_data = to_pandas_func()
+            self._to_numpy(
+                df=df_data,
+                file_path=file_path,
+            )
+
+        else:
+            npz_data: dict[str, np.ndarray]
+            with np.load(
+                file_path,
+                encoding=self.encoding,
+                allow_pickle=self.allow_pickle
+            ) as npz_data:
+                df_data = pd.DataFrame(
+                    data={
+                        k: v
+                        for k,v in npz_data.items()
+                    }
+                ).set_index(
+                    "index"
+                )
+
+        return df_data
+
+
+class HDFDataMixin:
+    encoding = "UTF-8"
+    errors = "strict"
+    format = "table"
+    key = "df"
+
+    def _to_hdf(
+        self,
+        df: pd.DataFrame,
+        file_path: str,
+    ) -> None:
+        df.to_hdf(
+            path_or_buf=file_path,
+            key=self.key,
+            format=self.format,
+            errors=self.errors,
+            encoding=self.encoding,
+        )
+
+    def load_from_hdf(
+        self,
+        file_path: str,
+        to_pandas_func: Callable[[], pd.DataFrame],
+    ) -> pd.DataFrame:
+        df_data: pd.DataFrame
+
+        if not os.path.exists(file_path):
+            df_data = to_pandas_func()
+            self._to_hdf(
+                df=df_data,
+                file_path=file_path,
+            )
+
+        else:
+            df_data = pd.read_hdf(
+                path_or_buf=file_path,
+                key=self.key,
+                format=self.format,
+                errors=self.errors,
+                encoding=self.encoding,
+            )
+
+        return df_data
 
 
 class ParquetDataMixin:
@@ -25,6 +160,9 @@ class ParquetDataMixin:
         df: pd.DataFrame,
         file_path: str,
     ) -> None:
+        logger.debug(
+            f"Saving dataframe as parquet in {file_path}."
+        )
         df.to_parquet(
             path=file_path,
             engine=self.engine,
@@ -36,44 +174,48 @@ class ParquetDataMixin:
         to_pandas_func: Callable[[], pd.DataFrame],
     ) -> pd.DataFrame:
         if not os.path.exists(file_path):
+            df_data = to_pandas_func()
             self._to_parquet(
-                df=to_pandas_func(),
+                df=df_data,
                 file_path=file_path,
             )
 
-        return pd.read_parquet(
-            path=file_path,
-            engine=self.engine,
-            use_nullable_dtypes=self.use_nullable_dtypes,
-        )
+        else:
+            df_data = pd.read_parquet(
+                path=file_path,
+                engine=self.engine,
+                use_nullable_dtypes=self.use_nullable_dtypes,
+            )
+
+        return df_data
 
     def load_parquets(
         self,
         file_paths: list[str],
         to_pandas_func: Callable[[], list[pd.DataFrame]],
     ) -> list[pd.DataFrame]:
-        all_files_created = all(
-            os.path.exists(file_path)
+        any_file_not_created = any(
+            not os.path.exists(file_path)
             for file_path in file_paths
         )
 
-        if not all_files_created:
+        if any_file_not_created:
             dataframes = to_pandas_func()
-
             for file_path, df in zip(file_paths, dataframes):
                 self._to_parquet(
                     df=df,
                     file_path=file_path,
                 )
 
-        dataframes = [
-            pd.read_parquet(
-                path=file_path,
-                engine=self.engine,
-                use_nullable_dtypes=self.use_nullable_dtypes,
-            )
-            for file_path in file_paths
-        ]
+        else:
+            dataframes = [
+                pd.read_parquet(
+                    path=file_path,
+                    engine=self.engine,
+                    use_nullable_dtypes=self.use_nullable_dtypes,
+                )
+                for file_path in file_paths
+            ]
 
         return dataframes
 
@@ -109,6 +251,9 @@ class DaskParquetDataMixin:
 
 
 class BaseDataMixin:
+    _save_folder_path: str = ""
+    __save_file_name: str = "dataset_global_attributes"
+
     dataset_name: str
     mapper_item_original_id_to_index: dict[int, int]
     mapper_user_original_id_to_index: dict[int, int]
@@ -119,27 +264,103 @@ class BaseDataMixin:
     def print_statistics(self) -> None:
         pass
 
-    def save_data(self, save_folder_path) -> None:
-        global_attributes_dict = {
-            "mapper_item_original_id_to_index": self.mapper_item_original_id_to_index,
-            "mapper_user_original_id_to_index": self.mapper_user_original_id_to_index,
-            "dataset_name": self.dataset_name,
+    def _assert_is_initialized(self) -> None:
+        pass
+
+    def get_dataset_name(self):
+        return self.dataset_name
+
+    def get_mapper_item_original_id_to_index(self):
+        return self.mapper_item_original_id_to_index
+
+    def get_mapper_user_original_id_to_index(self):
+        return self.mapper_user_original_id_to_index
+
+    def get_global_mapper_dict(self):
+        return {
+            "user_original_ID_to_index": self.mapper_user_original_id_to_index,
+            "item_original_ID_to_index": self.mapper_item_original_id_to_index,
         }
 
-        data_io = DataIO(folder_path=save_folder_path)
-        data_io.save_data(
-            data_dict_to_save=global_attributes_dict,
-            file_name="dataset_global_attributes"
+    def save_data(self, save_folder_path) -> None:
+        logger.debug(
+            f"{self.__class__.__name__}|{self.save_data.__name__}|{self.__save_file_name=}"
+        )
+
+        self._save_folder_path = save_folder_path
+
+        DataIO.s_save_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+            data_dict_to_save={
+                "mapper_item_original_id_to_index": self.mapper_item_original_id_to_index,
+                "mapper_user_original_id_to_index": self.mapper_user_original_id_to_index,
+                "dataset_name": self.dataset_name,
+            },
         )
 
     def load_data(self, save_folder_path) -> None:
-        data_io = DataIO(folder_path=save_folder_path)
-        global_attributes_dict = data_io.load_data(
-            file_name="dataset_global_attributes"
+        logger.debug(
+            f"{self.__class__.__name__}|{self.load_data.__name__}|{self.__save_file_name=}"
+        )
+
+        self._save_folder_path = save_folder_path
+
+        global_attributes_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
         )
 
         for attrib_name, attrib_object in global_attributes_dict.items():
             self.__setattr__(attrib_name, attrib_object)
+
+
+class LazyBaseDataMixin:
+    _key_dataset_name: str = "dataset_name"
+    _key_mapper_user_original_id_to_index: str = "mapper_user_original_id_to_index"
+    _key_mapper_item_original_id_to_index: str = "mapper_item_original_id_to_index"
+
+    _save_folder_path: str = ""
+    __save_file_name: str = "dataset_global_attributes"
+
+    @cached_property
+    def dataset_name(self) -> str:
+        global_attributes_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        return global_attributes_dict[
+            self._key_dataset_name
+        ]
+
+    @cached_property
+    def mapper_user_original_id_to_index(self) -> dict[Any, int]:
+        global_attributes_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        return global_attributes_dict[
+            self._key_mapper_user_original_id_to_index
+        ]
+
+    @cached_property
+    def mapper_item_original_id_to_index(self) -> dict[Any, int]:
+        global_attributes_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        return global_attributes_dict[
+            self._key_mapper_item_original_id_to_index
+        ]
+
+    def verify_data_consistency(self) -> None:
+        pass
+
+    def print_statistics(self) -> None:
+        pass
 
     def _assert_is_initialized(self) -> None:
         pass
@@ -148,16 +369,48 @@ class BaseDataMixin:
         return self.dataset_name
 
     def get_mapper_item_original_id_to_index(self):
-        return self.mapper_item_original_id_to_index.copy()
+        return self.mapper_item_original_id_to_index
 
     def get_mapper_user_original_id_to_index(self):
-        return self.mapper_user_original_id_to_index.copy()
+        return self.mapper_user_original_id_to_index
 
-    def get_global_mapper_dict(self):
-        return {
-            "user_original_ID_to_index": self.mapper_user_original_id_to_index,
-            "item_original_ID_to_index": self.mapper_item_original_id_to_index,
-        }
+    def save_data(self, save_folder_path) -> None:
+        logger.debug(
+            f"{self.__class__.__name__}|{self.save_data.__name__}|{self.__save_file_name=}"
+        )
+
+        self._save_folder_path = save_folder_path
+
+        DataIO.s_save_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+            data_dict_to_save={
+                self._key_dataset_name: self.dataset_name,
+                self._key_mapper_user_original_id_to_index: self.mapper_user_original_id_to_index,
+                self._key_mapper_item_original_id_to_index: self.mapper_item_original_id_to_index,
+            },
+        )
+
+    def load_data(self, save_folder_path) -> None:
+        logger.debug(
+            f"{self.__class__.__name__}|{self.load_data.__name__}|{self.__save_file_name=}"
+        )
+
+        self._save_folder_path = save_folder_path
+
+        logger.debug(
+            f"Checking that dataset exists, if not, raise exception."
+        )
+
+        data_exists = DataIO.s_file_exists(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        if not data_exists:
+            raise FileNotFoundError(
+                f"No dataset exists on {self._save_folder_path} with the name of {self.__save_file_name}."
+            )
 
 
 class CSRMatrixStatisticsMixin:
@@ -174,20 +427,20 @@ class CSRMatrixStatisticsMixin:
         uim_all = sp.csr_matrix(self.statistics_matrix)
         user_profile_length = np.ediff1d(uim_all.indptr)
 
-        max_interactions_per_user = user_profile_length.max()
+        max_interactions_per_user = user_profile_length.max(initial=np.NINF)
         mean_interactions_per_user = user_profile_length.mean()
         std_interactions_per_user = user_profile_length.std()
-        min_interactions_per_user = user_profile_length.min()
+        min_interactions_per_user = user_profile_length.min(initial=np.PINF)
 
         uim_all = sp.csc_matrix(uim_all)
         item_profile_length = np.ediff1d(uim_all.indptr)
 
-        max_interactions_per_item = item_profile_length.max()
+        max_interactions_per_item = item_profile_length.max(initial=np.NINF)
         mean_interactions_per_item = item_profile_length.mean()
         std_interactions_per_item = item_profile_length.std()
-        min_interactions_per_item = item_profile_length.min()
+        min_interactions_per_item = item_profile_length.min(initial=np.PINF)
 
-        print(
+        logger.info(
             f"DataReader: current dataset is: {self.dataset_name} - {self.statistics_matrix_name}\n"
             f"\tNumber of items: {n_items}\n"
             f"\tNumber of users: {n_users}\n"
@@ -393,6 +646,87 @@ class InteractionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
             self.__setattr__(attrib_name, attrib_object)
 
 
+class LazyInteractionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
+    NAME_URM_ALL = "URM_all"
+
+    NAME_URM_TIMESTAMP_TRAIN = "URM_timestamp_train"
+    NAME_URM_TIMESTAMP_VALIDATION = "URM_timestamp_validation"
+    NAME_URM_TIMESTAMP_TEST = "URM_timestamp_test"
+
+    NAME_URM_LEAVE_LAST_K_OUT_TRAIN = "URM_leave_last_k_out_train"
+    NAME_URM_LEAVE_LAST_K_OUT_VALIDATION = "URM_leave_last_k_out_validation"
+    NAME_URM_LEAVE_LAST_K_OUT_TEST = "URM_leave_last_k_out_test"
+
+    _key_interactions: str = "interactions"
+    _key_is_interactions_implicit: str = "is_interactions_implicit"
+    __save_file_name: str = "dataset_URM"
+
+    @cached_property
+    def interactions(self) -> dict[str, sp.csr_matrix]:
+        data_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        return data_dict[
+            self._key_interactions
+        ]
+
+    @cached_property
+    def is_interactions_implicit(self) -> bool:
+        data_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        return data_dict[
+            self._key_is_interactions_implicit
+        ]
+
+    def save_data(self, save_folder_path):
+        logger.debug(
+            f"{self.__class__.__name__}|{self.save_data.__name__}|{self.__save_file_name=}"
+        )
+
+        super().save_data(
+            save_folder_path=save_folder_path,
+        )
+        self._save_folder_path = save_folder_path
+
+        DataIO.s_save_data(
+            file_name=self.__save_file_name,
+            folder_path=save_folder_path,
+            data_dict_to_save={
+                self._key_interactions: self.interactions,
+                self._key_is_interactions_implicit: self.is_interactions_implicit,
+            },
+        )
+
+    def get_urm_splits(self, evaluation_strategy: EvaluationStrategy):
+        if evaluation_strategy == EvaluationStrategy.LEAVE_LAST_K_OUT:
+            return self._get_urm_leave_last_k_out_splits()
+        elif evaluation_strategy == EvaluationStrategy.TIMESTAMP:
+            return self._get_urm_timestamp_splits()
+        else:
+            raise ValueError(
+                f"Requested split ({evaluation_strategy}) does not exist."
+            )
+
+    def _get_urm_leave_last_k_out_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
+        return (
+            self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TRAIN],
+            self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_VALIDATION],
+            self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TEST],
+        )
+
+    def _get_urm_timestamp_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
+        return (
+            self.interactions[self.NAME_URM_TIMESTAMP_TRAIN],
+            self.interactions[self.NAME_URM_TIMESTAMP_VALIDATION],
+            self.interactions[self.NAME_URM_TIMESTAMP_TEST],
+        )
+
+
 class ImpressionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
     NAME_UIM_ALL = "UIM_all"
 
@@ -486,6 +820,230 @@ class ImpressionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
 
         for attrib_name, attrib_object in impressions_attributes_dict.items():
             self.__setattr__(attrib_name, attrib_object)
+
+
+class LazyImpressionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
+    NAME_UIM_ALL = "UIM_all"
+
+    NAME_UIM_TIMESTAMP_TRAIN = "UIM_timestamp_train"
+    NAME_UIM_TIMESTAMP_VALIDATION = "UIM_timestamp_validation"
+    NAME_UIM_TIMESTAMP_TEST = "UIM_timestamp_test"
+
+    NAME_UIM_LEAVE_LAST_K_OUT_TRAIN = "UIM_leave_last_k_out_train"
+    NAME_UIM_LEAVE_LAST_K_OUT_VALIDATION = "UIM_leave_last_k_out_validation"
+    NAME_UIM_LEAVE_LAST_K_OUT_TEST = "UIM_leave_last_k_out_test"
+
+    _key_impressions: str = "impressions"
+    _key_is_impressions_implicit: str = "is_impressions_implicit"
+    __save_file_name: str = "dataset_UIM"
+
+    @cached_property
+    def impressions(self) -> dict[str, sp.csr_matrix]:
+        data_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        return data_dict[
+            self._key_impressions
+        ]
+
+    @cached_property
+    def is_impressions_implicit(self) -> bool:
+        data_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        return data_dict[
+            self._key_is_impressions_implicit
+        ]
+
+    def save_data(self, save_folder_path):
+        logger.debug(
+            f"{self.__class__.__name__}|{self.save_data.__name__}|{self.__save_file_name=}"
+        )
+
+        super().save_data(
+            save_folder_path=save_folder_path,
+        )
+        self._save_folder_path = save_folder_path
+
+        DataIO.s_save_data(
+            file_name=self.__save_file_name,
+            folder_path=save_folder_path,
+            data_dict_to_save={
+                self._key_impressions: self.impressions,
+                self._key_is_impressions_implicit: self.is_impressions_implicit,
+            },
+        )
+
+    def get_uim_splits(self, evaluation_strategy: EvaluationStrategy):
+        if evaluation_strategy == EvaluationStrategy.LEAVE_LAST_K_OUT:
+            return self._get_uim_leave_last_k_out_splits()
+        elif evaluation_strategy == EvaluationStrategy.TIMESTAMP:
+            return self._get_uim_timestamp_splits()
+        else:
+            raise ValueError(
+                f"Requested split ({evaluation_strategy}) does not exist."
+            )
+
+    def _get_uim_leave_last_k_out_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
+        return (
+            self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TRAIN],
+            self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_VALIDATION],
+            self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TEST],
+        )
+
+    def _get_uim_timestamp_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
+        return (
+            self.impressions[self.NAME_UIM_TIMESTAMP_TRAIN],
+            self.impressions[self.NAME_UIM_TIMESTAMP_VALIDATION],
+            self.impressions[self.NAME_UIM_TIMESTAMP_TEST],
+        )
+
+
+class PandasDataFramesMixin(BaseDataMixin):
+    NAME_DF_FILTERED = "DF_filtered"
+
+    NAME_DF_TIMESTAMP_TRAIN = "DF_timestamp_train"
+    NAME_DF_TIMESTAMP_VALIDATION = "DF_timestamp_validation"
+    NAME_DF_TIMESTAMP_TEST = "DF_timestamp_test"
+
+    NAME_DF_LEAVE_LAST_K_OUT_TRAIN = "DF_leave_last_k_out_train"
+    NAME_DF_LEAVE_LAST_K_OUT_VALIDATION = "DF_leave_last_k_out_validation"
+    NAME_DF_LEAVE_LAST_K_OUT_TEST = "DF_leave_last_k_out_test"
+
+    dataframes: dict[str, pd.DataFrame]
+
+    def print_statistics(self) -> None:
+        super().print_statistics()
+
+        for df_name, df in self.dataframes.items():
+            df_describe = df.describe(
+                exclude=[object],
+                percentiles=[0.01, 0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 0.95, 0.99],
+                datetime_is_numeric=True,
+            )
+            logger.info(
+                f"DataReader: current dataframe is: {self.dataset_name} - {df_name}\n"
+                f"\n\t* {df_describe}"
+
+            )
+
+    def _assert_is_initialized(self):
+        super()._assert_is_initialized()
+
+        if self.dataframes is None:
+            raise ValueError(
+                f"DataReader {self.dataset_name}: Unable to load data split. The split has not been generated"
+                f" yet, call the load_data function to do so."
+            )
+
+    def get_df_by_name(self, name: str) -> pd.DataFrame:
+        return self.dataframes[name].copy()
+
+    def get_df_all(self) -> pd.DataFrame:
+        return self.dataframes[self.NAME_DF_FILTERED].copy()
+
+    def get_df_splits(self, evaluation_strategy: EvaluationStrategy):
+        if evaluation_strategy == EvaluationStrategy.LEAVE_LAST_K_OUT:
+            return self._get_df_leave_last_k_out_splits()
+        elif evaluation_strategy == EvaluationStrategy.TIMESTAMP:
+            return self._get_df_timestamp_splits()
+        else:
+            raise ValueError(
+                f"Requested split ({evaluation_strategy}) does not exist."
+            )
+
+    def _get_df_leave_last_k_out_splits(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        return (
+            self.dataframes[self.NAME_DF_LEAVE_LAST_K_OUT_TRAIN],
+            self.dataframes[self.NAME_DF_LEAVE_LAST_K_OUT_VALIDATION],
+            self.dataframes[self.NAME_DF_LEAVE_LAST_K_OUT_TEST],
+        )
+
+    def _get_df_timestamp_splits(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        return (
+            self.dataframes[self.NAME_DF_TIMESTAMP_TRAIN],
+            self.dataframes[self.NAME_DF_TIMESTAMP_VALIDATION],
+            self.dataframes[self.NAME_DF_TIMESTAMP_TEST],
+        )
+
+    def get_loaded_df_names(self):
+        return list(self.dataframes.keys())
+
+    def get_loaded_df_items(self):
+        return self.dataframes.items()
+
+    def save_data(self, save_folder_path):
+        super().save_data(
+            save_folder_path=save_folder_path,
+        )
+
+        data_io = DataIO(folder_path=save_folder_path)
+        data_io.save_data(
+            data_dict_to_save={
+                "dataframes": self.dataframes,
+            },
+            file_name="dataset_DFs"
+        )
+
+    def load_data(self, save_folder_path):
+        super().load_data(
+            save_folder_path=save_folder_path,
+        )
+
+        data_io = DataIO(folder_path=save_folder_path)
+        dataframes_attributes_dict = data_io.load_data(
+            file_name="dataset_DFs"
+        )
+
+        for attrib_name, attrib_object in dataframes_attributes_dict.items():
+            self.__setattr__(attrib_name, attrib_object)
+
+
+class LazyPandasDataFramesMixin(LazyBaseDataMixin):
+    NAME_DF_FILTERED = "DF_filtered"
+
+    NAME_DF_TIMESTAMP_TRAIN = "DF_timestamp_train"
+    NAME_DF_TIMESTAMP_VALIDATION = "DF_timestamp_validation"
+    NAME_DF_TIMESTAMP_TEST = "DF_timestamp_test"
+
+    NAME_DF_LEAVE_LAST_K_OUT_TRAIN = "DF_leave_last_k_out_train"
+    NAME_DF_LEAVE_LAST_K_OUT_VALIDATION = "DF_leave_last_k_out_validation"
+    NAME_DF_LEAVE_LAST_K_OUT_TEST = "DF_leave_last_k_out_test"
+
+    _key_dataframes: str = "dataframes"
+    __save_file_name: str = "dataset_DFs"
+
+    @cached_property
+    def dataframes(self) -> dict[str, pd.DataFrame]:
+        data_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        return data_dict[
+            self._key_dataframes
+        ]
+
+    def save_data(self, save_folder_path):
+        logger.debug(
+            f"{self.__class__.__name__}|{self.save_data.__name__}|{self.__save_file_name=}"
+        )
+
+        super().save_data(
+            save_folder_path=save_folder_path,
+        )
+
+        DataIO.s_save_data(
+            folder_path=save_folder_path,
+            file_name=self.__save_file_name,
+            data_dict_to_save={
+                self._key_dataframes: self.dataframes,
+            },
+        )
 
 
 class DatasetStatisticsMixin:
@@ -953,7 +1511,7 @@ class DatasetStatisticsMixin:
             if column not in self.statistics[dataset_name]:
                 self.statistics[dataset_name][column] = dict()
 
-            # notna is there because columns might be NA.
+            # notna is there because columns_to_keep might be NA.
             self.statistics[dataset_name][column]["gini_index_values_labels"] = gini_index(
                 array=df[column]
             )
