@@ -1,57 +1,50 @@
-from typing import Any
+from typing import Any, Optional
 
 import scipy.sparse as sp
+import pandas as pd
 
-from recsys_framework_extensions.data.mixins import ImpressionsMixin, InteractionsMixin
+from recsys_framework_extensions.data.mixins import (
+    ImpressionsMixin,
+    InteractionsMixin,
+    PandasDataFramesMixin,
+    LazyInteractionsMixin,
+    LazyImpressionsMixin,
+    LazyPandasDataFramesMixin,
+)
 
 
-class BaseDataset(ImpressionsMixin, InteractionsMixin):
+class BaseDataset(LazyImpressionsMixin, LazyInteractionsMixin, LazyPandasDataFramesMixin):
     def __init__(
         self,
-        dataset_name: str,
-        impressions: dict[str, sp.csr_matrix],
-        interactions: dict[str, sp.csr_matrix],
-        mapper_item_original_id_to_index: dict[Any, int],
-        mapper_user_original_id_to_index: dict[Any, int],
-        is_impressions_implicit: bool,
-        is_interactions_implicit: bool,
+        dataset_name: str = None,
+        mapper_item_original_id_to_index: dict[Any, int] = None,
+        mapper_user_original_id_to_index: dict[Any, int] = None,
+        impressions: dict[str, sp.csr_matrix] = None,
+        interactions: dict[str, sp.csr_matrix] = None,
+        dataframes: dict[str, pd.DataFrame] = None,
+        is_impressions_implicit: bool = None,
+        is_interactions_implicit: bool = None,
     ):
-        self.dataset_name = dataset_name
-        self.impressions = impressions
-        self.interactions = interactions
-        self.mapper_item_original_id_to_index = mapper_item_original_id_to_index
-        self.mapper_user_original_id_to_index = mapper_user_original_id_to_index
-        self.is_impressions_implicit = is_impressions_implicit
-        self.is_interactions_implicit = is_interactions_implicit
+        if dataset_name is not None:
+            self.dataset_name = dataset_name
 
-    @staticmethod
-    def empty_dataset() -> "BaseDataset":
-        return BaseDataset(
-            dataset_name="",
-            impressions=dict(),
-            interactions=dict(),
-            mapper_item_original_id_to_index=dict(),
-            mapper_user_original_id_to_index=dict(),
-            is_impressions_implicit=False,
-            is_interactions_implicit=False,
-        )
+        if mapper_item_original_id_to_index is not None:
+            self.mapper_item_original_id_to_index = mapper_item_original_id_to_index
 
+        if mapper_user_original_id_to_index is not None:
+            self.mapper_user_original_id_to_index = mapper_user_original_id_to_index
 
-class BinaryImplicitDataset(BaseDataset):
-    def __init__(
-        self,
-        dataset_name: str,
-        impressions: dict[str, sp.csr_matrix],
-        interactions: dict[str, sp.csr_matrix],
-        mapper_item_original_id_to_index: dict[Any, int],
-        mapper_user_original_id_to_index: dict[Any, int],
-    ):
-        super().__init__(
-            dataset_name=dataset_name,
-            impressions=impressions,
-            interactions=interactions,
-            mapper_item_original_id_to_index=mapper_item_original_id_to_index,
-            mapper_user_original_id_to_index=mapper_user_original_id_to_index,
-            is_impressions_implicit=True,
-            is_interactions_implicit=True,
-        )
+        if impressions is not None:
+            self.impressions = impressions
+
+        if interactions is not None:
+            self.interactions = interactions
+
+        if dataframes is not None:
+            self.dataframes = dataframes
+
+        if is_impressions_implicit is not None:
+            self.is_impressions_implicit = is_impressions_implicit
+
+        if is_interactions_implicit is not None:
+            self.is_interactions_implicit = is_interactions_implicit
