@@ -46,6 +46,8 @@ def assert_mappers_are_equal(
     mapper_id_to_index: dict[Any, Any],
     other_mapper_id_to_index: dict[Any, Any],
 ) -> None:
+    # The == operator in python compares two dictionaries by their key and values automatically, i.e., it compares
+    # that both dictionaries share the same (key, value) pairs.
     if mapper_id_to_index == other_mapper_id_to_index:
         return
 
