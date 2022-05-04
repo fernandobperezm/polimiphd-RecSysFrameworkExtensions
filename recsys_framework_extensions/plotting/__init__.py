@@ -1495,3 +1495,74 @@ def generate_accuracy_and_beyond_metrics_latex(
         n_evaluation_users=num_test_users,
         table_title=None
     )
+
+
+import attrs
+@attrs.define
+class DataFrameResults:
+    df_results: pd.DataFrame = attrs.field()
+    df_times: pd.DataFrame = attrs.field()
+    df_hyper_params: pd.DataFrame = attrs.field()
+
+
+def generate_accuracy_and_beyond_metrics_pandas(
+    experiments_folder_path: str,
+    export_experiments_folder_path: str,
+    num_test_users: int,
+    base_algorithm_list: list[Any],
+    knn_similarity_list: list[Any],
+    other_algorithm_list: Optional[list[Any]],
+    accuracy_metrics_list: list[str],
+    beyond_accuracy_metrics_list: list[str],
+    all_metrics_list: list[str],
+    cutoffs_list: list[int],
+    icm_names: Optional[list[str]],
+) -> DataFrameResults:
+    os.makedirs(
+        export_experiments_folder_path,
+        exist_ok=True
+    )
+
+    accuracy_metrics_latex_results_filename = os.path.join(
+        export_experiments_folder_path,
+        "accuracy_metrics_latex_results.tex"
+    )
+    beyond_accuracy_metrics_latex_results_filename = os.path.join(
+        export_experiments_folder_path,
+        "beyond_accuracy_metrics_latex_results.tex"
+    )
+    all_metrics_latex_results_filename = os.path.join(
+        export_experiments_folder_path,
+        "all_metrics_latex_results.tex"
+    )
+    time_latex_results_filename = os.path.join(
+        export_experiments_folder_path,
+        "time_latex_results.tex"
+    )
+
+    result_loader = ResultFolderLoader(
+        experiments_folder_path,
+        base_algorithm_list=base_algorithm_list,
+        other_algorithm_list=other_algorithm_list,
+        KNN_similarity_list=knn_similarity_list,
+        ICM_names_list=icm_names,
+        UCM_names_list=None
+    )
+
+    df_results = result_loader.get_results_dataframe(
+        metrics_list=accuracy_metrics_list + beyond_accuracy_metrics_list,
+        cutoffs_list=cutoffs_list,
+    )
+
+    df_times = result_loader.get_time_statistics_dataframe(
+        n_decimals=4,
+        n_evaluation_users=num_test_users,
+    )
+
+    df_hyper_params = result_loader.get_hyperparameters_dataframe()
+
+    return DataFrameResults(
+        df_results=df_results,
+        df_times=df_times,
+        df_hyper_params=df_hyper_params,
+    )

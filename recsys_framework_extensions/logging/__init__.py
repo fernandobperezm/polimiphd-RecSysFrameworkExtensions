@@ -1,3 +1,4 @@
+import datetime
 import logging
 import os
 import sys
@@ -27,12 +28,14 @@ class LoggingConfig:
     file_name: str = attr.ib()
 
     def __attrs_post_init__(self) -> None:
+        current_ts_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
         object.__setattr__(
             self,
             "file_name",
             os.path.join(
                 self.dir_name,
-                self.file_name,
+                f"{current_ts_str}_{self.file_name}",
             )
         )
 

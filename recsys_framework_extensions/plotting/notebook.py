@@ -1,9 +1,15 @@
-from typing import Union, Any
+from typing import Union, Any, Optional
 
 import dask.dataframe as dd
 import holoviews as hv
 import numpy as np
 import pandas as pd
+
+from recsys_framework_extensions.logging import get_logger
+
+logger = get_logger(
+    logger_name=__file__,
+)
 
 
 def plot_curve_statistics_popularity_by_dataset_and_feature(
@@ -121,13 +127,14 @@ def plot_curve_popularity_by_counts(
     df_data: Union[pd.DataFrame, dd.DataFrame],
     column_to_calculate: str,
     sort: bool,
-    plot_name: str,
+    plot_label: str,
     plot_title: str,
     plot_x_label: str,
-) -> Union[tuple[hv.Curve, hv.Curve], tuple[hv.Bars, hv.Bars]]:
+    curve_to_use: Optional[hv.Element] = None,
+) -> Union[tuple[hv.Curve, hv.Curve], tuple[hv.Bars, hv.Bars], tuple[hv.Element, hv.Element]]:
     df_popularity = df_data[column_to_calculate].value_counts(
         normalize=False,
-        sort=sort,
+        sort=True,
         ascending=False,
         dropna=True,
     ).to_frame(
@@ -143,20 +150,44 @@ def plot_curve_popularity_by_counts(
         }
     )
 
+    if sort:
+        df_popularity = df_popularity.sort_values()
+
+    print(df_popularity)
+
     if isinstance(df_data, dd.DataFrame):
         df_popularity = df_popularity.compute()
 
     dim_popularity = hv.Dimension('popularity', label='Popularity')
     num_unique_points = df_popularity.shape[0]
-    if num_unique_points <= 30:
+
+    if curve_to_use is not None:
+        dim_column = hv.Dimension(column_to_calculate, label=plot_x_label)
+        plot = curve_to_use(
+            data=df_popularity,
+            kdims=dim_column,
+            vdims=dim_popularity,
+            name=plot_label,
+            label=plot_label,
+        )
+
+        plot_log_y = curve_to_use(
+            data=df_popularity,
+            kdims=dim_column,
+            vdims=dim_popularity,
+            name=plot_label,
+            label=plot_label,
+        )
+
+    elif num_unique_points <= 30:
         dim_column = hv.Dimension(column_to_calculate, label=plot_x_label)
 
         plot = hv.Bars(
             data=df_popularity,
             kdims=dim_column,
             vdims=dim_popularity,
-            name=f"{plot_name}",
-            label=f"{plot_title}",
+            name=plot_label,
+            label=plot_label,
         ).opts(
             xrotation=45,
         )
@@ -165,47 +196,51 @@ def plot_curve_popularity_by_counts(
             data=df_popularity,
             kdims=dim_column,
             vdims=dim_popularity,
-            name=f"{plot_name}",
-            label=f"{plot_title} - Log Y",
+            name=plot_label,
+            label=plot_label,
         ).opts(
             xrotation=45,
         )
 
     else:
         dim_column = hv.Dimension("rank", label=plot_x_label)
-        plot = hv.Curve(
+        plot = hv.Area(
             data=df_popularity,
             kdims=dim_column,
             vdims=dim_popularity,
-            name=f"{plot_name}",
-            label=f"{plot_title}",
+            name=plot_label,
+            label=plot_label,
         )
 
-        plot_log_y = hv.Curve(
+        plot_log_y = hv.Area(
             data=df_popularity,
             kdims=dim_column,
             vdims=dim_popularity,
-            name=f"{plot_name}",
-            label=f"{plot_title} - Log Y",
+            name=plot_label,
+            label=plot_label,
         )
 
     return plot.opts(
         logx=False,
         logy=False,
+        title=plot_title,
     ), plot_log_y.opts(
         logx=False,
         logy=True,
+        title=f"{plot_title} - Log Y",
     )
 
 
 def plot_histogram_timestamp(
     df_data: Union[pd.DataFrame, dd.DataFrame],
+    curve_to_use: Optional[hv.Element],
     by: str,
     column_to_calculate: str,
+    plot_label: str,
     plot_title: str,
     plot_x_label: str,
 ) -> Union[hv.Bars, hv.Curve]:
-    is_timestamp_datetime = df_data[column_to_calculate].dtype == "datetime64[ns]"
+    is_timestamp_datetime = "datetime64" in str(df_data[column_to_calculate].dtype)
 
     if is_timestamp_datetime:
         if by == "date":
@@ -245,24 +280,39 @@ def plot_histogram_timestamp(
     dim_popularity = hv.Dimension('popularity', label='Popularity')
     dim_new_column = hv.Dimension("index", label=plot_x_label)
 
-    if num_unique_points < 20:
+    if curve_to_use is not None:
+        plot = curve_to_use(
+            data=df_popularity,
+            kdims=dim_new_column,
+            vdims=dim_popularity,
+            label=plot_label,
+        )
+    elif num_unique_points < 20:
         plot = hv.Bars(
             data=df_popularity,
             kdims=dim_new_column,
             vdims=dim_popularity,
-            label=f"{plot_title}",
+            label=plot_label,
         ).opts(
             xrotation=45,
         )
-    else:
-        plot = hv.Curve(
+    elif num_unique_points < 200:
+        plot = hv.Area(
             data=df_popularity,
             kdims=dim_new_column,
             vdims=dim_popularity,
-            label=f"{plot_title}",
+            label=plot_label,
+        )
+    else:
+        plot = hv.Scatter(
+            data=df_popularity,
+            kdims=dim_new_column,
+            vdims=dim_popularity,
+            label=plot_label,
         )
 
     return plot.opts(
         logx=False,
         logy=False,
+        title=plot_title
     )

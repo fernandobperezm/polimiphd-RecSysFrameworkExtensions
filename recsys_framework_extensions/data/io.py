@@ -20,6 +20,12 @@ import pandas as pd
 import scipy.sparse as sps
 
 from Recommenders.DataIO import DataIO as RecSysFrameworkDataIO
+from recsys_framework_extensions.logging import get_logger
+
+
+logger = get_logger(
+    logger_name=__file__
+)
 
 
 def attach_to_extended_json_decoder(enum_class: Type[Enum]):
@@ -39,7 +45,7 @@ def attach_to_extended_json_decoder(enum_class: Type[Enum]):
     return enum_class
 
 
-class ExtendedJSONEncoderDecoder(json.JSONEncoder):
+class ExtendedJSONEncoderDecoder:
     """
     Some values cannot be easily serialized/deserialized in JSON. For instance, enums and some
     numpy types.
@@ -72,11 +78,12 @@ class ExtendedJSONEncoderDecoder(json.JSONEncoder):
 
         ExtendedJSONEncoderDecoder._ATTACHED_ENUMS[enum_name] = enum_class
 
-    def default(self, obj: Any) -> Any:
+    @staticmethod
+    def to_json(obj: Any) -> Any:
         """
         This is the method that is called when a Python object is being serialized, i.e.,
-        when json.dump(..., cls=ExtendedJSONEncoderDecoder) or json.dumps(..., cls=ExtendedJSONEncoderDecoder)
-        are called.
+        when json.dump(..., default=ExtendedJSONEncoderDecoder.to_json) or
+        json.dumps(..., default=ExtendedJSONEncoderDecoder.to_json) are called.
         """
         if isinstance(obj, (np.integer, np.int32)):
             return int(obj)
@@ -86,10 +93,10 @@ class ExtendedJSONEncoderDecoder(json.JSONEncoder):
             return {"__enum__": str(obj)}
 
         # We leave the default JSONEncoder to raise an exception if it cannot serialize something.
-        return json.JSONEncoder.default(self, obj)
+        return json.JSONEncoder().default(obj)
 
     @staticmethod
-    def decode_hook(obj: Any) -> Any:
+    def from_json(obj: Any) -> Any:
         """
         This is the method that is called when a str object is being deserialized, i.e.,
         when json.load(..., object_hook=ExtendedJSONEncoderDecoder.decode_hook) or
@@ -154,17 +161,18 @@ class DataIO(RecSysFrameworkDataIO):
                         compression=None,
                     )
 
+                    # Note: Not using this because hdf on "format=fixed" does not store categoricals.
                     # Using "fixed" as a format causes a PerformanceWarning because it saves types that are not native of C
                     # This is acceptable because it provides the flexibility of using python objects as types (strings, None, etc..)
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings("ignore")
-                        attrib_data.to_hdf(
-                            current_file_path + ".h5",
-                            key="DataFrame",
-                            mode='w',
-                            append=False,
-                            format="fixed"
-                        )
+                    # with warnings.catch_warnings():
+                    #     warnings.filterwarnings("ignore")
+                    #     attrib_data.to_hdf(
+                    #         current_file_path + ".h5",
+                    #         key="DataFrame",
+                    #         mode='w',
+                    #         append=False,
+                    #         format="fixed"
+                    #     )
 
                 elif isinstance(attrib_data, sps.spmatrix):
                     sps.save_npz(current_file_path, attrib_data)
@@ -176,7 +184,7 @@ class DataIO(RecSysFrameworkDataIO):
                 else:
                     # Try to parse it as json, if it fails and the data is a dictionary, use another zip file
                     try:
-                        _ = json.dumps(attrib_data, cls=ExtendedJSONEncoderDecoder)
+                        _ = json.dumps(attrib_data, default=ExtendedJSONEncoderDecoder.to_json)
                         attribute_to_save_as_json[attrib_name] = attrib_data
                     except TypeError:
                         if isinstance(attrib_data, dict):
@@ -207,7 +215,7 @@ class DataIO(RecSysFrameworkDataIO):
                     if isinstance(attrib_data, dict):
                         attrib_data = self._check_dict_key_type(attrib_data)
 
-                    json.dump(attrib_data, outfile, csl=ExtendedJSONEncoderDecoder)
+                    json.dump(attrib_data, outfile, default=ExtendedJSONEncoderDecoder.to_json)
 
             with zipfile.ZipFile(
                 self.folder_path + file_name + ".temp", 'w',
@@ -282,7 +290,7 @@ class DataIO(RecSysFrameworkDataIO):
 
                 elif file_extension == "json":
                     with open(decompressed_file_path, "r") as json_file:
-                        attrib_data = json.load(json_file, object_hook=ExtendedJSONEncoderDecoder.decode_hook)
+                        attrib_data = json.load(json_file, object_hook=ExtendedJSONEncoderDecoder.from_json)
 
                 else:
                     raise Exception(
@@ -300,3 +308,72 @@ class DataIO(RecSysFrameworkDataIO):
         shutil.rmtree(current_temp_folder, ignore_errors=True)
 
         return data_dict_loaded
+
+    @staticmethod
+    def s_convert_keys_to_str(data_dict_to_save: dict[Any, Any]) -> dict[str, Any]:
+        logger.debug(
+            f"Checking if keys are all string."
+        )
+
+        all_keys_are_str = all(
+            isinstance(k, str)
+            for k in data_dict_to_save.keys()
+        )
+
+        if all_keys_are_str:
+            logger.debug(f"All keys are strings.")
+            return data_dict_to_save
+
+        logger.warning(
+            f"Some keys were not strings. Converting all keys to strings to serialize this dictionary."
+        )
+        return {
+            str(k): v
+            for k,v in data_dict_to_save.items()
+        }
+
+    @staticmethod
+    def s_file_exists(folder_path: str, file_name: str) -> bool:
+        logger.info(
+            f"Checking if {os.path.join(folder_path, file_name)} exists."
+        )
+
+        if file_name.endswith(".zip"):
+            return os.path.exists(
+                os.path.join(folder_path, file_name)
+            )
+        else:
+            return os.path.exists(
+                os.path.join(folder_path, f"{file_name}.zip")
+            )
+
+    @staticmethod
+    def s_save_data(folder_path: str, file_name: str, data_dict_to_save: dict) -> None:
+        logger.info(
+            f"Saving data to {os.path.join(folder_path, file_name)}"
+        )
+
+        data_dict_to_save = DataIO.s_convert_keys_to_str(
+            data_dict_to_save=data_dict_to_save,
+        )
+
+        data_io = DataIO(
+            folder_path=folder_path,
+        )
+        data_io.save_data(
+            file_name=file_name,
+            data_dict_to_save=data_dict_to_save,
+        )
+
+    @staticmethod
+    def s_load_data(folder_path: str, file_name: str,) -> dict[str, Any]:
+        logger.info(
+            f"Loading data stored in {os.path.join(folder_path, file_name)}"
+        )
+
+        data_io = DataIO(
+            folder_path=folder_path,
+        )
+        return data_io.load_data(
+            file_name=file_name,
+        )

@@ -1,18 +1,17 @@
 import os
-from typing import Any, Callable
+from functools import cached_property
+from typing import Any, Callable, NamedTuple, Protocol
 
+import attrs
 import dask.dataframe as dd
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 import scipy.stats as st
-
-from functools import cached_property
-from scipy.stats.stats import DescribeResult
-from tqdm import tqdm
-
 from Data_manager.DataReader_utils import compute_density
 from Data_manager.Dataset import gini_index
+from scipy.stats.stats import DescribeResult
+from tqdm import tqdm
 
 from recsys_framework_extensions.data.io import DataIO
 from recsys_framework_extensions.evaluation import EvaluationStrategy
@@ -21,6 +20,40 @@ from recsys_framework_extensions.logging import get_logger
 logger = get_logger(
     logger_name=__file__,
 )
+
+
+class InteractionsDataSplits(NamedTuple):
+    sp_urm_train: sp.csr_matrix
+    sp_urm_validation: sp.csr_matrix
+    sp_urm_train_validation: sp.csr_matrix
+    sp_urm_test: sp.csr_matrix
+
+
+class ImpressionsDataSplits(NamedTuple):
+    sp_uim_train: sp.csr_matrix
+    sp_uim_validation: sp.csr_matrix
+    sp_uim_train_validation: sp.csr_matrix
+    sp_uim_test: sp.csr_matrix
+
+
+class DatasetConfigBackupMixin:
+    @staticmethod
+    def save_config(
+        config: object,
+        folder_path: str,
+    ) -> None:
+        file_name = "dataset_config.zip"
+        if DataIO.s_file_exists(folder_path=folder_path, file_name=file_name):
+            return
+
+        DataIO.s_save_data(
+            folder_path=folder_path,
+            file_name=file_name,
+            data_dict_to_save={
+                "config": attrs.asdict(config),
+                "sha256_hash": config.sha256_hash,  # type: ignore
+            }
+        )
 
 
 class DataIOMixin:
@@ -55,35 +88,30 @@ class DataIOMixin:
         return dict_data
 
 
-class NumpyPandasDataMixin:
+class NumpyDataMixin:
     encoding = "ASCII"
     allow_pickle = True  # Loading impressions (arrays of arrays) require allow_pickle=True
 
     def _to_numpy(
         self,
-        df: pd.DataFrame,
+        np_arr: np.ndarray,
         file_path: str,
     ) -> None:
         np.savez(
             file=file_path,
-            index=df.index.to_numpy(copy=False),
-            **{
-                col: df[col].to_numpy(copy=False)
-                for col in df.columns
-            },
+            np_arr=np_arr,
         )
 
     def load_from_numpy(
         self,
         file_path: str,
-        to_pandas_func: Callable[[], pd.DataFrame],
-    ) -> pd.DataFrame:
-        df_data: pd.DataFrame
+        to_numpy_func: Callable[[], np.ndarray],
+    ) -> np.ndarray:
 
         if not os.path.exists(file_path):
-            df_data = to_pandas_func()
+            np_arr = to_numpy_func()
             self._to_numpy(
-                df=df_data,
+                np_arr=np_arr,
                 file_path=file_path,
             )
 
@@ -94,61 +122,9 @@ class NumpyPandasDataMixin:
                 encoding=self.encoding,
                 allow_pickle=self.allow_pickle
             ) as npz_data:
-                df_data = pd.DataFrame(
-                    data={
-                        k: v
-                        for k,v in npz_data.items()
-                    }
-                ).set_index(
-                    "index"
-                )
+                np_arr = npz_data["np_arr"]
 
-        return df_data
-
-
-class HDFDataMixin:
-    encoding = "UTF-8"
-    errors = "strict"
-    format = "table"
-    key = "df"
-
-    def _to_hdf(
-        self,
-        df: pd.DataFrame,
-        file_path: str,
-    ) -> None:
-        df.to_hdf(
-            path_or_buf=file_path,
-            key=self.key,
-            format=self.format,
-            errors=self.errors,
-            encoding=self.encoding,
-        )
-
-    def load_from_hdf(
-        self,
-        file_path: str,
-        to_pandas_func: Callable[[], pd.DataFrame],
-    ) -> pd.DataFrame:
-        df_data: pd.DataFrame
-
-        if not os.path.exists(file_path):
-            df_data = to_pandas_func()
-            self._to_hdf(
-                df=df_data,
-                file_path=file_path,
-            )
-
-        else:
-            df_data = pd.read_hdf(
-                path_or_buf=file_path,
-                key=self.key,
-                format=self.format,
-                errors=self.errors,
-                encoding=self.encoding,
-            )
-
-        return df_data
+        return np_arr
 
 
 class ParquetDataMixin:
@@ -250,11 +226,74 @@ class DaskParquetDataMixin:
         )
 
 
+class SparseDataMixin:
+    compressed = True
+
+    def _sparse_matrix_to_disk(
+        self,
+        sparse_matrix: sp.spmatrix,
+        file_path: str,
+    ) -> None:
+        logger.debug(
+            f"Saving sparse matrix in {file_path}."
+        )
+        sp.save_npz(
+            file_path,
+            matrix=sparse_matrix,
+            compressed=self.compressed,
+        )
+
+    def load_sparse_matrix(
+        self,
+        file_path: str,
+        to_sparse_matrix_func: Callable[[], sp.spmatrix],
+    ) -> sp.spmatrix:
+        if not os.path.exists(file_path):
+            sparse_matrix = to_sparse_matrix_func()
+            self._sparse_matrix_to_disk(
+                sparse_matrix=sparse_matrix,
+                file_path=file_path,
+            )
+
+        else:
+            sparse_matrix = sp.load_npz(file_path)
+
+        return sparse_matrix
+
+    def load_sparse_matrices(
+        self,
+        file_paths: list[str],
+        to_sparse_matrices_func: Callable[[], list[sp.spmatrix]],
+    ) -> list[sp.spmatrix]:
+        any_file_not_created = any(
+            not os.path.exists(file_path)
+            for file_path in file_paths
+        )
+
+        if any_file_not_created:
+            sparse_matrices = to_sparse_matrices_func()
+            for file_path, sparse_matrix in zip(file_paths, sparse_matrices):
+                self._sparse_matrix_to_disk(
+                    sparse_matrix=sparse_matrix,
+                    file_path=file_path,
+                )
+
+        else:
+            sparse_matrices = [
+                sp.load_npz(file_path)
+                for file_path in file_paths
+            ]
+
+        return sparse_matrices
+
+
 class BaseDataMixin:
     _save_folder_path: str = ""
     __save_file_name: str = "dataset_global_attributes"
 
     dataset_name: str
+    dataset_config: dict[str, Any]
+    dataset_sha256_hash: str
     mapper_item_original_id_to_index: dict[int, int]
     mapper_user_original_id_to_index: dict[int, int]
 
@@ -296,6 +335,8 @@ class BaseDataMixin:
                 "mapper_item_original_id_to_index": self.mapper_item_original_id_to_index,
                 "mapper_user_original_id_to_index": self.mapper_user_original_id_to_index,
                 "dataset_name": self.dataset_name,
+                "dataset_config": self.dataset_config,
+                "dataset_sha256_hash": self.dataset_sha256_hash,
             },
         )
 
@@ -316,7 +357,15 @@ class BaseDataMixin:
 
 
 class LazyBaseDataMixin:
+    _dataset_name: str = ""
+    _dataset_sha256_hash: str = ""
+    _dataset_config: dict[str, Any] = dict()
+    _mapper_user_original_id_to_index: dict[Any, int] = dict()
+    _mapper_item_original_id_to_index: dict[Any, int] = dict()
+
     _key_dataset_name: str = "dataset_name"
+    _key_dataset_config: str = "dataset_config"
+    _key_dataset_sha256_hash: str = "dataset_sha256_hash"
     _key_mapper_user_original_id_to_index: str = "mapper_user_original_id_to_index"
     _key_mapper_item_original_id_to_index: str = "mapper_item_original_id_to_index"
 
@@ -332,6 +381,28 @@ class LazyBaseDataMixin:
 
         return global_attributes_dict[
             self._key_dataset_name
+        ]
+
+    @cached_property
+    def dataset_config(self) -> dict[str, Any]:
+        global_attributes_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        return global_attributes_dict[
+            self._key_dataset_config
+        ]
+
+    @cached_property
+    def dataset_sha256_hash(self) -> str:
+        global_attributes_dict = DataIO.s_load_data(
+            folder_path=self._save_folder_path,
+            file_name=self.__save_file_name,
+        )
+
+        return global_attributes_dict[
+            self._key_dataset_sha256_hash
         ]
 
     @cached_property
@@ -385,9 +456,11 @@ class LazyBaseDataMixin:
             folder_path=self._save_folder_path,
             file_name=self.__save_file_name,
             data_dict_to_save={
-                self._key_dataset_name: self.dataset_name,
-                self._key_mapper_user_original_id_to_index: self.mapper_user_original_id_to_index,
-                self._key_mapper_item_original_id_to_index: self.mapper_item_original_id_to_index,
+                self._key_dataset_name: self._dataset_name,
+                self._key_dataset_config: self._dataset_config,
+                self._key_dataset_sha256_hash: self._dataset_sha256_hash,
+                self._key_mapper_user_original_id_to_index: self._mapper_user_original_id_to_index,
+                self._key_mapper_item_original_id_to_index: self._mapper_item_original_id_to_index,
             },
         )
 
@@ -651,10 +724,12 @@ class LazyInteractionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
 
     NAME_URM_TIMESTAMP_TRAIN = "URM_timestamp_train"
     NAME_URM_TIMESTAMP_VALIDATION = "URM_timestamp_validation"
+    NAME_URM_TIMESTAMP_TRAIN_VALIDATION = "URM_timestamp_train_validation"
     NAME_URM_TIMESTAMP_TEST = "URM_timestamp_test"
 
     NAME_URM_LEAVE_LAST_K_OUT_TRAIN = "URM_leave_last_k_out_train"
     NAME_URM_LEAVE_LAST_K_OUT_VALIDATION = "URM_leave_last_k_out_validation"
+    NAME_URM_LEAVE_LAST_K_OUT_TRAIN_VALIDATION = "URM_leave_last_k_out_train_validation"
     NAME_URM_LEAVE_LAST_K_OUT_TEST = "URM_leave_last_k_out_test"
 
     _key_interactions: str = "interactions"
@@ -702,7 +777,7 @@ class LazyInteractionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
             },
         )
 
-    def get_urm_splits(self, evaluation_strategy: EvaluationStrategy):
+    def get_urm_splits(self, evaluation_strategy: EvaluationStrategy) -> InteractionsDataSplits:
         if evaluation_strategy == EvaluationStrategy.LEAVE_LAST_K_OUT:
             return self._get_urm_leave_last_k_out_splits()
         elif evaluation_strategy == EvaluationStrategy.TIMESTAMP:
@@ -712,18 +787,20 @@ class LazyInteractionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
                 f"Requested split ({evaluation_strategy}) does not exist."
             )
 
-    def _get_urm_leave_last_k_out_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
-        return (
-            self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TRAIN],
-            self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_VALIDATION],
-            self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TEST],
+    def _get_urm_leave_last_k_out_splits(self) -> InteractionsDataSplits:
+        return InteractionsDataSplits(
+            sp_urm_train=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TRAIN],
+            sp_urm_validation=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_VALIDATION],
+            sp_urm_train_validation=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TRAIN_VALIDATION],
+            sp_urm_test=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TEST],
         )
 
-    def _get_urm_timestamp_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
-        return (
-            self.interactions[self.NAME_URM_TIMESTAMP_TRAIN],
-            self.interactions[self.NAME_URM_TIMESTAMP_VALIDATION],
-            self.interactions[self.NAME_URM_TIMESTAMP_TEST],
+    def _get_urm_timestamp_splits(self) -> InteractionsDataSplits:
+        return InteractionsDataSplits(
+            sp_urm_train=self.interactions[self.NAME_URM_TIMESTAMP_TRAIN],
+            sp_urm_validation=self.interactions[self.NAME_URM_TIMESTAMP_VALIDATION],
+            sp_urm_train_validation=self.interactions[self.NAME_URM_TIMESTAMP_TRAIN_VALIDATION],
+            sp_urm_test=self.interactions[self.NAME_URM_TIMESTAMP_TEST],
         )
 
 
@@ -827,10 +904,12 @@ class LazyImpressionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
 
     NAME_UIM_TIMESTAMP_TRAIN = "UIM_timestamp_train"
     NAME_UIM_TIMESTAMP_VALIDATION = "UIM_timestamp_validation"
+    NAME_UIM_TIMESTAMP_TRAIN_VALIDATION = "UIM_timestamp_train_validation"
     NAME_UIM_TIMESTAMP_TEST = "UIM_timestamp_test"
 
     NAME_UIM_LEAVE_LAST_K_OUT_TRAIN = "UIM_leave_last_k_out_train"
     NAME_UIM_LEAVE_LAST_K_OUT_VALIDATION = "UIM_leave_last_k_out_validation"
+    NAME_UIM_LEAVE_LAST_K_OUT_TRAIN_VALIDATION = "UIM_leave_last_k_out_train_validation"
     NAME_UIM_LEAVE_LAST_K_OUT_TEST = "UIM_leave_last_k_out_test"
 
     _key_impressions: str = "impressions"
@@ -878,7 +957,7 @@ class LazyImpressionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
             },
         )
 
-    def get_uim_splits(self, evaluation_strategy: EvaluationStrategy):
+    def get_uim_splits(self, evaluation_strategy: EvaluationStrategy) -> ImpressionsDataSplits:
         if evaluation_strategy == EvaluationStrategy.LEAVE_LAST_K_OUT:
             return self._get_uim_leave_last_k_out_splits()
         elif evaluation_strategy == EvaluationStrategy.TIMESTAMP:
@@ -888,18 +967,20 @@ class LazyImpressionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
                 f"Requested split ({evaluation_strategy}) does not exist."
             )
 
-    def _get_uim_leave_last_k_out_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
-        return (
-            self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TRAIN],
-            self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_VALIDATION],
-            self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TEST],
+    def _get_uim_leave_last_k_out_splits(self) -> ImpressionsDataSplits:
+        return ImpressionsDataSplits(
+            sp_uim_train=self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TRAIN],
+            sp_uim_validation=self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_VALIDATION],
+            sp_uim_train_validation=self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TRAIN_VALIDATION],
+            sp_uim_test=self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TEST],
         )
 
-    def _get_uim_timestamp_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
-        return (
-            self.impressions[self.NAME_UIM_TIMESTAMP_TRAIN],
-            self.impressions[self.NAME_UIM_TIMESTAMP_VALIDATION],
-            self.impressions[self.NAME_UIM_TIMESTAMP_TEST],
+    def _get_uim_timestamp_splits(self) -> ImpressionsDataSplits:
+        return ImpressionsDataSplits(
+            sp_uim_train=self.impressions[self.NAME_UIM_TIMESTAMP_TRAIN],
+            sp_uim_validation=self.impressions[self.NAME_UIM_TIMESTAMP_VALIDATION],
+            sp_uim_train_validation=self.impressions[self.NAME_UIM_TIMESTAMP_TRAIN_VALIDATION],
+            sp_uim_test=self.impressions[self.NAME_UIM_TIMESTAMP_TEST],
         )
 
 
@@ -1008,10 +1089,12 @@ class LazyPandasDataFramesMixin(LazyBaseDataMixin):
 
     NAME_DF_TIMESTAMP_TRAIN = "DF_timestamp_train"
     NAME_DF_TIMESTAMP_VALIDATION = "DF_timestamp_validation"
+    NAME_DF_TIMESTAMP_TRAIN_VALIDATION = "DF_timestamp_train_validation"
     NAME_DF_TIMESTAMP_TEST = "DF_timestamp_test"
 
     NAME_DF_LEAVE_LAST_K_OUT_TRAIN = "DF_leave_last_k_out_train"
     NAME_DF_LEAVE_LAST_K_OUT_VALIDATION = "DF_leave_last_k_out_validation"
+    NAME_DF_LEAVE_LAST_K_OUT_TRAIN_VALIDATION = "DF_leave_last_k_out_train_validation"
     NAME_DF_LEAVE_LAST_K_OUT_TEST = "DF_leave_last_k_out_test"
 
     _key_dataframes: str = "dataframes"
@@ -1044,6 +1127,106 @@ class LazyPandasDataFramesMixin(LazyBaseDataMixin):
                 self._key_dataframes: self.dataframes,
             },
         )
+
+
+class LazyImpressionsFeaturesMixin(LazyBaseDataMixin):
+    """
+    The main structure of this mixin are two dictionaries: `impressions_features_dataframes` and
+    `impressions_features_sparse_matrices`, both hold the same data but are contained in different structures. Both
+    dictionaries are lazy, i.e., if the feature requested is not already in the dictionary, then it searches for the
+    feature on disk.
+
+    Laziness avoids to load probably expensive data structures on memory if they're not used by the agent using the
+    dataset, e.g., the impressions features exist but the recommender being trained does not use impressions features.
+    """
+    _impressions_features_dataframes: dict[str, pd.DataFrame] = dict()
+    _impressions_features_sparse_matrices: dict[str, sp.csr_matrix] = dict()
+
+    _folder_name_impressions_features = "dataset_impressions_features"
+    __save_file_name: str = "dataset_impressions_features"
+
+    def dataframe_available_features(self) -> list[str]:
+        available_features: dict[str, list[str]] = DataIO.s_load_data(
+            folder_path=os.path.join(
+                self._save_folder_path, self._folder_name_impressions_features, "",
+            ),
+            file_name=f"available_features",
+        )
+
+        return available_features["dataframes"]
+
+    def sparse_matrices_available_features(self) -> list[str]:
+        available_features: dict[str, list[str]] = DataIO.s_load_data(
+            folder_path=os.path.join(
+                self._save_folder_path, self._folder_name_impressions_features, "",
+            ),
+            file_name=f"available_features",
+        )
+
+        return available_features["sparse_matrices"]
+
+    def dataframe_impression_feature(self, feature: str) -> pd.DataFrame:
+        data_dict: dict[str, pd.DataFrame] = DataIO.s_load_data(
+            folder_path=os.path.join(
+                self._save_folder_path, self._folder_name_impressions_features, "",
+            ),
+            file_name=f"dataframe_{feature}",
+        )
+
+        return data_dict[feature]
+
+    def sparse_matrix_impression_feature(self, feature: str) -> pd.DataFrame:
+        data_dict: dict[str, pd.DataFrame] = DataIO.s_load_data(
+            folder_path=os.path.join(
+                self._save_folder_path, self._folder_name_impressions_features, "",
+            ),
+            file_name=f"sparse_matrix_{feature}",
+        )
+
+        return data_dict[feature]
+
+    def save_data(self, save_folder_path: str):
+        logger.debug(
+            f"{self.__class__.__name__}|{self.save_data.__name__}|{self.__save_file_name=}"
+        )
+
+        super().save_data(
+            save_folder_path=save_folder_path,
+        )
+
+        save_folder_path = os.path.join(
+            save_folder_path, self._folder_name_impressions_features, "",
+        )
+
+        # First, save the available features
+        DataIO.s_save_data(
+            folder_path=save_folder_path,
+            file_name="available_features",
+            data_dict_to_save={
+                "dataframes": list(self._impressions_features_dataframes.keys()),
+                "sparse_matrices": list(self._impressions_features_sparse_matrices.keys()),
+            }
+        )
+
+        # Second, save each feature dataframe independently.
+        for key_feature, df_feature in self._impressions_features_dataframes.items():
+            DataIO.s_save_data(
+                folder_path=save_folder_path,
+                file_name=f"dataframe_{key_feature}",
+                data_dict_to_save={
+                    key_feature: df_feature,
+                }
+            )
+
+        # Third, save each feature sparse matrix independently.
+        for key_feature, sp_feature in self._impressions_features_sparse_matrices.items():
+            DataIO.s_save_data(
+                folder_path=save_folder_path,
+                file_name=f"sparse_matrix_{key_feature}",
+                data_dict_to_save={
+                    key_feature: sp_feature,
+                }
+            )
 
 
 class DatasetStatisticsMixin:
@@ -1181,7 +1364,7 @@ class DatasetStatisticsMixin:
 
             relative_difference_num_uniques = df_num_uniques_column - df_other_num_uniques_column
             relative_percentage_num_uniques = (
-                                                      df_num_uniques_column - df_other_num_uniques_column) * 100 / df_num_uniques_column
+                                                  df_num_uniques_column - df_other_num_uniques_column) * 100 / df_num_uniques_column
 
             self.statistics[dataset_name][df_name][f"num_uniques_{column}"] = df_num_records
             self.statistics[dataset_name][df_other_name][f"num_uniques_{column}"] = df_other_num_records

@@ -1,4 +1,4 @@
-from typing import Any, cast
+from typing import Any, cast, Optional
 
 import tqdm
 import numpy as np
@@ -7,6 +7,7 @@ import scipy.sparse as sp
 
 from Data_manager.IncrementalSparseMatrix import IncrementalSparseMatrix_FilterIDs
 
+from recsys_framework_extensions.decorators import log_calling_args
 from recsys_framework_extensions.logging import get_logger
 
 logger = get_logger(
@@ -80,9 +81,13 @@ def create_sparse_matrix_from_dataframe(
     binarize_interactions: bool,
     mapper_user_id_to_index: dict[Any, Any],
     mapper_item_id_to_index: dict[Any, Any],
+    data_column: Optional[str] = None,
 ) -> sp.csr_matrix:
     # Just keep a copy of the columns_to_keep we're interested in.
-    df = df[[users_column, items_column]].copy()
+    if data_column is None:
+        df = df[[users_column, items_column]].copy()
+    else:
+        df = df[[users_column, items_column, data_column]].copy()
 
     # Explode item lists so rows can be inserted faster. This may blow up memory.
     if "object" == str(df[items_column].dtype):
@@ -110,7 +115,10 @@ def create_sparse_matrix_from_dataframe(
 
     users = df_keep[users_column].to_numpy()
     items = df_keep[items_column].to_numpy()
-    data = np.ones_like(users, dtype=np.int32)
+    if data_column is not None:
+        data = df_keep[data_column].to_numpy()
+    else:
+        data = np.ones_like(users, dtype=np.int32)
 
     builder_sparse_matrix = IncrementalSparseMatrix_FilterIDs(
         preinitialized_col_mapper=mapper_item_id_to_index,
