@@ -214,16 +214,22 @@ class DaskParquetDataMixin:
         folder_path: str,
         to_dask_func: Callable[[], dd.DataFrame],
     ) -> pd.DataFrame:
-        if not os.path.exists(folder_path):
+        folder_exists = os.path.exists(folder_path) and os.path.isdir(folder_path)
+
+        if not folder_exists:
+            ddf = to_dask_func()
+
             self._to_parquet(
-                df=to_dask_func(),
+                df=ddf,
                 folder_path=folder_path,
             )
+        else:
+            ddf = dd.read_parquet(
+                path=folder_path,
+                engine=self.engine,
+            )
 
-        return dd.read_parquet(
-            path=folder_path,
-            engine=self.engine,
-        )
+        return ddf
 
 
 class SparseDataMixin:
