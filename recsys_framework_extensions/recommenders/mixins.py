@@ -30,7 +30,7 @@ class MixinEmptySaveModel:
 class MixinLoadModel:
     RECOMMENDER_NAME = ""
 
-    def load_model(self, folder_path: str, file_name: str = None):
+    def load_model(self, folder_path: str, file_name: Optional[str] = None):
         if file_name is None:
             file_name = self.RECOMMENDER_NAME
 
