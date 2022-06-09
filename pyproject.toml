@@ -42,8 +42,10 @@ statsmodels = "^0.13.2"
 email-gmail = ["google-api-python-client", "google-auth-httplib2", "google-auth-oauthlib"]
 
 [tool.poetry.dev-dependencies]
-mypy = "^0.931"
+mypy = "^0.950"
 types-toml = "^0.10.4"
+pytest = "^7.1.2"
+Faker = "^13.12.0"
 
 [tool.poetry.build]
 generate-setup-file = true
