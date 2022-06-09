@@ -66,7 +66,7 @@ class TestStatisticalTests:
         expected_hypothesis: StatisticalTestHypothesis,
     ):
         # Arrange
-        test_alpha = 0.05
+        test_alphas = [0.05]
         scores_base = recommender_scores_up_to_point2.astype(
             dtype=np.float64,
         )
@@ -85,24 +85,36 @@ class TestStatisticalTests:
         dict_results = compute_statistical_tests_of_base_vs_others(
             scores_base=scores_base,
             scores_others=scores_others,
-            alpha=test_alpha,
+            alphas=test_alphas,
             alternative=test_alternative,
         )
 
         # Assert
         for list_results in [
-            dict_results["wilcoxon"],
-            dict_results["sign"],
+            dict_results.wilcoxon,
+            dict_results.sign,
         ]:
             for results in list_results:
-                p_value = results["p_value"]
-                hypothesis = results["hypothesis"]
+                p_value = results.p_value
+                hypothesis = results.hypothesis
 
-                assert hypothesis == expected_hypothesis
+                assert np.all(
+                    np.array(hypothesis) == expected_hypothesis
+                )
                 assert (
-                    StatisticalTestAlternative.LESS == test_alternative
-                    and p_value > test_alpha
-                ) or (p_value <= test_alpha)
+                    np.all(StatisticalTestHypothesis.NULL == np.array(hypothesis))
+                    and np.all(p_value > np.asarray(test_alphas))
+                ) or (
+                    np.all(StatisticalTestHypothesis.ALTERNATIVE == np.array(hypothesis))
+                    and np.all(p_value <= np.asarray(test_alphas))
+                )
+                assert (
+                    np.all(StatisticalTestHypothesis.NULL == np.array(hypothesis))
+                    and StatisticalTestAlternative.LESS == test_alternative
+                ) or (
+                    np.all(StatisticalTestHypothesis.ALTERNATIVE == np.array(hypothesis))
+                    and test_alternative in [StatisticalTestAlternative.TWO_SIDED, StatisticalTestAlternative.GREATER]
+                )
 
     @pytest.mark.parametrize(
         "test_alternative,expected_hypothesis",
@@ -120,7 +132,7 @@ class TestStatisticalTests:
         expected_hypothesis: StatisticalTestHypothesis,
     ):
         # Arrange
-        test_alpha = 0.05
+        test_alphas = [0.05]
         scores_base = recommender_scores_up_to_point2.astype(
             dtype=np.float64,
         )
@@ -139,36 +151,76 @@ class TestStatisticalTests:
         dict_results = compute_statistical_tests_of_base_vs_others(
             scores_base=scores_base,
             scores_others=scores_others,
-            alpha=test_alpha,
+            alphas=test_alphas,
             alternative=test_alternative,
         )
 
         # Assert
-        for dict_results_bonferroni in [
-            dict_results["bonferroni_wilcoxon"],
-            dict_results["bonferroni_sign"],
-        ]:
+        for dict_results_bonferroni, dict_results_test in zip(
+            [
+                dict_results.bonferroni_wilcoxon,
+                dict_results.bonferroni_sign,
+            ],
+            [
+                dict_results.wilcoxon,
+                dict_results.sign,
+            ]
+        ):
             num_tested_scores = scores_others.shape[0]
-            reject = dict_results_bonferroni["reject"]
-            alpha_bonferroni = dict_results_bonferroni["corrected_alphas"]
-            p_values_corrected = dict_results_bonferroni["corrected_p_values"]
-            hypothesis = dict_results_bonferroni["hypothesis"]
+            corrected_alphas = dict_results_bonferroni.corrected_alphas
+            corrected_p_values = dict_results_bonferroni.corrected_p_values
+            hypothesis = dict_results_bonferroni.hypothesis
 
-            assert np.isclose(
-                alpha_bonferroni,
-                test_alpha / num_tested_scores
+            assert np.allclose(
+                corrected_alphas,
+                np.asarray(test_alphas) / num_tested_scores
+            )
+            assert np.allclose(
+                corrected_p_values,
+                np.asarray([
+                    min(res.p_value * num_tested_scores, 1.)
+                    for res in dict_results_test
+                ])
             )
             assert np.all(
-                expected_hypothesis == hypothesis
+                expected_hypothesis == np.array(hypothesis)
             )
             assert (
-                StatisticalTestAlternative.LESS == test_alternative
-                and not np.any(reject)
-            ) or np.all(reject)
+                np.all(
+                    StatisticalTestHypothesis.NULL == np.array(hypothesis)
+                )
+                and np.all(
+                    np.ravel(
+                       [
+                           p_val > np.asarray(test_alphas)
+                           for p_val in corrected_p_values
+                       ]
+                    )
+                )
+            ) or (
+                np.all(
+                    StatisticalTestHypothesis.ALTERNATIVE == np.array(hypothesis)
+                )
+                and np.all(
+                    np.ravel(
+                        [
+                            p_val <= np.asarray(test_alphas)
+                            for p_val in corrected_p_values
+                        ]
+                    )
+                )
+            )
             assert (
-                StatisticalTestAlternative.LESS == test_alternative
-                and np.all(p_values_corrected > test_alpha)
-            ) or np.all(p_values_corrected <= test_alpha)
+                np.all(
+                   StatisticalTestHypothesis.NULL == np.array(hypothesis)
+                )
+                and StatisticalTestAlternative.LESS == test_alternative
+            ) or (
+                np.all(
+                   StatisticalTestHypothesis.ALTERNATIVE == np.array(hypothesis)
+                )
+                and test_alternative in [StatisticalTestAlternative.TWO_SIDED, StatisticalTestAlternative.GREATER]
+            )
 
     def test_friedman_chi_square(
         self,
@@ -178,7 +230,7 @@ class TestStatisticalTests:
         # Arrange
         expected_hypothesis = StatisticalTestHypothesis.ALTERNATIVE
 
-        test_alpha = 0.05
+        test_alphas = [0.05]
         test_alternative = StatisticalTestAlternative.TWO_SIDED
 
         scores_base = recommender_scores_up_to_point2.astype(
@@ -202,16 +254,19 @@ class TestStatisticalTests:
         dict_results = compute_statistical_tests_of_base_vs_others(
             scores_base=scores_base,
             scores_others=scores_others,
-            alpha=test_alpha,
+            alphas=test_alphas,
             alternative=test_alternative,
         )
 
         # Assert
-        dict_result_friedman_chi_square = dict_results["friedman_chi_square"]
-        p_value = dict_result_friedman_chi_square["p_value"]
-        p_value_reliable = dict_result_friedman_chi_square["p_value_reliable"]
-        hypothesis = dict_result_friedman_chi_square["hypothesis"]
+        p_value = dict_results.friedman.p_value
+        p_value_reliable = dict_results.friedman.p_value_reliable
+        hypothesis = dict_results.friedman.hypothesis
 
-        assert p_value <= test_alpha
         assert p_value_reliable
-        assert expected_hypothesis == hypothesis
+        assert np.all(
+            p_value <= np.array(test_alphas)
+        )
+        assert np.all(
+            expected_hypothesis == np.array(hypothesis)
+        )
