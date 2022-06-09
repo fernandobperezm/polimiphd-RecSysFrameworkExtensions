@@ -1,6 +1,7 @@
 import os
 import socket
 from typing import Any, Callable
+from typing_extensions import ParamSpec
 
 import attr
 import distributed
@@ -12,6 +13,9 @@ from distributed import Scheduler, Future, as_completed
 from recsys_framework_extensions.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+_JobParams = ParamSpec("_JobParams")
 
 
 @attr.s(frozen=True, kw_only=True)
@@ -45,8 +49,8 @@ class DaskInterface:
         job_key: str,
         job_priority: int,
         job_info: dict[str, Any],
-        method: Callable[[Any], None],
-        method_kwargs: dict[str, Any],
+        method: Callable[_JobParams, None],
+        method_kwargs: _JobParams.kwargs,
     ):
         job_future = self._client.submit(
             func=method,
