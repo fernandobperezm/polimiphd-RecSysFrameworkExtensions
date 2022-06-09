@@ -1181,8 +1181,8 @@ class LazyImpressionsFeaturesMixin(LazyBaseDataMixin):
 
         return data_dict[feature]
 
-    def sparse_matrix_impression_feature(self, feature: str) -> pd.DataFrame:
-        data_dict: dict[str, pd.DataFrame] = DataIO.s_load_data(
+    def sparse_matrix_impression_feature(self, feature: str) -> sp.csr_matrix:
+        data_dict: dict[str, sp.csr_matrix] = DataIO.s_load_data(
             folder_path=os.path.join(
                 self._save_folder_path, self._folder_name_impressions_features, "",
             ),
