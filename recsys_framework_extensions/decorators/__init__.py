@@ -3,30 +3,31 @@ from __future__ import annotations
 import functools
 import time
 
-from typing import cast, Any, Callable, TypeVar
+from typing import Callable, TypeVar, Optional
+from typing_extensions import ParamSpec
 
 from recsys_framework_extensions.logging import get_logger
 
 logger = get_logger(__name__)
 
-T_F = TypeVar('T_F', bound=Callable[..., Any])
-T_ARGS = TypeVar('T_ARGS', bound=tuple[Any])
-T_KWARGS = TypeVar('T_KWARGS', bound=dict[str, Any])
+_FuncParams = ParamSpec("_FuncParams")
+_FuncValue = TypeVar("_FuncValue")
 
 
 def typed_cache(
-    user_function: Callable[..., T_F]
-) -> Callable[..., T_F]:
+    user_function: Callable[_FuncParams, _FuncValue]
+) -> Callable[_FuncParams, _FuncValue]:
     return functools.cache(user_function)
 
 
-def timeit(func: T_F) -> T_F:
+def timeit(func: Callable[_FuncParams, _FuncValue]) -> Callable[_FuncParams, _FuncValue]:
     """
     Decorator that measures execution time of a method. This is a modified version from the one published at:
     https://medium.com/pythonhive/python-decorator-to-measure-the-execution-time-of-methods-fa04cb6bb36d
     """
 
-    def wrapper(*args: T_ARGS, **kwargs: T_KWARGS) -> Any:
+    @functools.wraps(func)
+    def inner(*args: _FuncParams.args, **kwargs: _FuncParams.kwargs) -> _FuncValue:
         ts = time.time()
         result = func(*args, **kwargs)
         te = time.time()
@@ -35,14 +36,38 @@ def timeit(func: T_F) -> T_F:
         )
         return result
 
-    return cast(T_F, wrapper)
+    return inner
 
 
-def log_calling_args(func: T_F) -> T_F:
-    def wrapper(*args: T_ARGS, **kwargs: T_KWARGS) -> Any:
+def log_calling_args(func: Callable[_FuncParams, _FuncValue]) -> Callable[_FuncParams, _FuncValue]:
+
+    @functools.wraps(func)
+    def wrapper(*args: _FuncParams.args, **kwargs: _FuncParams.kwargs) -> _FuncValue:
         logger.debug(
             f"Calling method '{func.__name__}' with args={args} and kwargs={kwargs}"
         )
         return func(*args, **kwargs)
 
-    return cast(T_F, wrapper)
+    return wrapper
+
+
+def catch_exception_return_none(func: Callable[_FuncParams, _FuncValue]) -> Callable[_FuncParams, Optional[_FuncValue]]:
+
+    @functools.wraps(func)
+    def wrapper(*args: _FuncParams.args, **kwargs: _FuncParams.kwargs) -> Optional[_FuncValue]:
+        logger.debug(
+            f"Calling method '{func.__name__}' with args={args} and kwargs={kwargs}"
+        )
+        try:
+            return func(*args, **kwargs)
+        except:
+            logger.exception(
+                f"The function {func.__name__} raised an exception. "
+                f"Debug info:"
+                f"\n\t* {args=}"
+                f"\n\t* {kwargs=}"
+                f""
+            )
+            return None
+
+    return wrapper
