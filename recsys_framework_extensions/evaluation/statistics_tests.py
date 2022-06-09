@@ -1,12 +1,11 @@
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional, Sequence, Iterable, Mapping
 
 import attrs
 import numpy as np
 import statsmodels.api as sm
 from scipy import stats
 
-from recsys_framework_extensions.decorators import timeit
 from recsys_framework_extensions.logging import get_logger
 
 logger = get_logger(
@@ -15,7 +14,7 @@ logger = get_logger(
 
 
 _MAX_P_VALUE = 0.05
-_DEFAULT_P_VALUE = 0.05
+_DEFAULT_ALPHA = 0.05
 _CONFIDENCE_INTERVAL_CONFIDENCE = 0.95
 _BOOTSTRAPING_NUM_TRIES = 100
 _HYPOTHESIS_ALTERNATIVE = "ALTERNATIVE"
@@ -34,18 +33,17 @@ class ComputedConfidenceInterval:
     mean: float = attrs.field()
     std: float = attrs.field()
     var: float = attrs.field()
-    p_value: float = attrs.field()
+    alpha: float = attrs.field()
     confidence_intervals: list[ConfidenceInterval] = attrs.field()
 
 
-def _get_final_hypothesis(
-    p_value: float
-) -> str:
-    return (
-        _HYPOTHESIS_ALTERNATIVE
-        if p_value <= _MAX_P_VALUE
-        else _HYPOTHESIS_NULL
-    )
+@attrs.define
+class ResultsStatisticalTests:
+    mean: float = attrs.field()
+    std: float = attrs.field()
+    var: float = attrs.field()
+    alpha: float = attrs.field()
+    confidence_intervals: list[ConfidenceInterval] = attrs.field()
 
 
 class StatisticalTestAlternative(Enum):
@@ -54,84 +52,174 @@ class StatisticalTestAlternative(Enum):
     LESS = "less"
 
 
+class StatisticalTestHypothesis(Enum):
+    NULL = "NULL"
+    ALTERNATIVE = "ALTERNATIVE"
+
+
 class SignTestHandleTies(Enum):
     STRICTLY_GREATER = "STRICTLY_GREATER"
     GREATER_OR_EQUAL = "GREATER_OR_EQUAL"
 
 
-def calculate_pairwise_test_statistics(
-    scores_recommender_1: np.ndarray,
-    scores_recommender_2: np.ndarray,
-) -> Any:
-    """Statistically test the pair-wise ranking score between recommender 1 and 2 on all users.
-
-    All these tests suppose that each user is i.i.d sample, and that each recommender is an observation or variable.
-
-    :class:`scipy.stats.wilcoxon`
-
-    Notes
-    -----
-    As noted by [1]_: "However, using the Wilcoxon signed rank test still requires that differences between the two
-    systems are comparable between users."
-
-    References
-    ----------
-    .. [1] Gunawardana A., Shani G. (2015) Evaluating Recommender Systems. In: Ricci F., Rokach L., Shapira B. (eds)
-       Recommender Systems Handbook. Springer, Boston, MA. https://doi.org/10.1007/978-1-4899-7637-6_8
-
-    """
-    assert scores_recommender_1.shape == scores_recommender_2.shape
-
-    num_users = scores_recommender_1.shape[0]
-
-    return dict(
-        wilcoxon=_wilcoxon_statistic_test(
-            scores_recommender_1=scores_recommender_1,
-            scores_recommender_2=scores_recommender_2,
-            zero_method="pratt",
-            alternative=StatisticalTestAlternative.GREATER,
-            correction=True,
-        ),
-        mc_nemar=_mc_nemar_test(
-            scores_recommender_1=scores_recommender_1,
-            scores_recommender_2=scores_recommender_2,
-            num_users=num_users,
-            alternative=StatisticalTestAlternative.GREATER,
-            handle_ties=SignTestHandleTies.STRICTLY_GREATER,
-        )
-    )
+@attrs.define
+class ResultsFriedmanTest:
+    test_statistic: float = attrs.field()
+    num_measurements: int = attrs.field()
+    p_value: float = attrs.field()
+    p_value_reliable: float = attrs.field()
+    hypothesis: Sequence[StatisticalTestHypothesis] = attrs.field()
+    kwargs: dict = attrs.field()
 
 
-def calculate_all_test_statistics(
-    scores: np.ndarray,
-) -> dict[str, dict[str, Any]]:
+@attrs.define
+class ResultsWilcoxonTest:
+    test_statistic: float = attrs.field()
+    p_value: float = attrs.field()
+    hypothesis: Sequence[StatisticalTestHypothesis] = attrs.field()
+    kwargs: dict = attrs.field()
+
+
+@attrs.define
+class ResultsSignTest:
+    p_value: float = attrs.field()
+    hypothesis: Sequence[StatisticalTestHypothesis] = attrs.field()
+    successes: int = attrs.field()
+    failures: int = attrs.field()
+    num_times_base_better_than_other: int = attrs.field()
+    num_times_other_better_than_base: int = attrs.field()
+    num_times_both_are_equal: int = attrs.field()
+    kwargs: dict = attrs.field()
+
+
+@attrs.define
+class ResultsBonferroniCorrection:
+    corrected_p_values: np.ndarray = attrs.field()
+    corrected_alphas: np.ndarray = attrs.field()
+    hypothesis: Sequence[Sequence[StatisticalTestHypothesis]] = attrs.field()
+    kwargs: dict = attrs.field()
+
+
+@attrs.define
+class ResultsStatisticalTestsBaseVsOthers:
+    friedman: ResultsFriedmanTest = attrs.field()
+    bonferroni_wilcoxon: ResultsBonferroniCorrection = attrs.field()
+    bonferroni_sign: ResultsBonferroniCorrection = attrs.field()
+    wilcoxon: Sequence[ResultsWilcoxonTest] = attrs.field()
+    sign: Sequence[ResultsSignTest] = attrs.field()
+
+
+def _get_final_hypothesis(
+    p_value: float,
+    alphas: Iterable[float],
+) -> Sequence[StatisticalTestHypothesis]:
+    return [
+        StatisticalTestHypothesis.ALTERNATIVE
+        if p_value <= alpha
+        else StatisticalTestHypothesis.NULL
+
+        for alpha in alphas
+    ]
+
+
+def compute_statistical_tests_of_base_vs_others(
+    scores_base: np.ndarray,
+    scores_others: np.ndarray,
+    alphas: Sequence[float],
+    alternative: StatisticalTestAlternative,
+) -> ResultsStatisticalTestsBaseVsOthers:
     """
 
     Arguments
     ---------
-    scores : np.ndarray
-        A matrix of dimensions (U, K) where U is the number of users and K is the number of recommenders to
+    alternative : StatisticalTestAlternative
+        TODO: fernando-debugger|complete
+    scores_base : np.ndarray
+        A matrix of dimensions (1, U) where U is the number of users.
+    scores_others : np.ndarray
+        A matrix of dimensions (K, U) where U is the number of users and K is the number of recommenders to
         statistically test.
-
+    alphas : Sequence[float]
+        TODO: fernando-debugger|complete
     """
-    num_users, num_recommenders = scores.shape
+    assert scores_base.ndim == 1
+    assert scores_others.ndim == 2
 
-    return dict(
-        friedman_chi_square=_friedman_chi_square_statistical_test(
-            scores=scores,
-            num_recommenders=num_recommenders,
-            num_users=num_users,
-        ),
+    num_users_base = scores_base.shape[0]
+
+    num_other_recommenders = scores_others.shape[0]
+    num_users_others = scores_others.shape[1]
+
+    assert num_users_base == num_users_others
+    assert num_other_recommenders >= 1
+
+    scores = np.vstack(
+        (scores_base, scores_others),
+    )
+
+    results_friedman = _friedman_chi_square_statistical_test(
+        scores=scores,
+        alphas=alphas,
+    )
+
+    results_wilcoxon = [
+        _wilcoxon_statistic_test(
+            scores_base=scores_base,
+            scores_other=scores_others[idx_recommender, :],
+            alphas=alphas,
+            alternative=alternative,
+        )
+        for idx_recommender in range(num_other_recommenders)
+    ]
+    results_sign = [
+        _sign_test(
+            scores_base=scores_base,
+            scores_other=scores_others[idx_recommender, :],
+            alphas=alphas,
+            alternative=alternative,
+        )
+        for idx_recommender in range(num_other_recommenders)
+    ]
+
+    p_values_wilcoxon = np.asarray(
+        [
+            res.p_value
+            for res in results_wilcoxon
+        ],
+        dtype=np.float64,
+    )
+    p_values_sign = np.asarray(
+        [
+            res.p_value
+            for res in results_sign
+        ],
+        dtype=np.float64,
+    )
+
+    results_bonferroni_wilcoxon = _bonferroni_correction(
+        p_values=p_values_wilcoxon,
+        alphas=alphas,
+    )
+    results_bonferroni_sign = _bonferroni_correction(
+        p_values=p_values_sign,
+        alphas=alphas,
+    )
+
+    return ResultsStatisticalTestsBaseVsOthers(
+        friedman=results_friedman,
+        wilcoxon=results_wilcoxon,
+        sign=results_sign,
+        bonferroni_wilcoxon=results_bonferroni_wilcoxon,
+        bonferroni_sign=results_bonferroni_sign,
     )
 
 
 def _wilcoxon_statistic_test(
-    scores_recommender_1: np.ndarray,
-    scores_recommender_2: np.ndarray,
+    scores_base: np.ndarray,
+    scores_other: np.ndarray,
+    alphas: Sequence[float],
     alternative: StatisticalTestAlternative,
-    correction: bool,
-    zero_method: str,
-) -> dict[str, Any]:
+) -> ResultsWilcoxonTest:
     """
 
     Notes
@@ -140,13 +228,13 @@ def _wilcoxon_statistic_test(
       H0 is ranks are equal,
       Ha is ranks are different, but does not tell you which one is better.
     alternative="greater":
-      H0 is ranks are better in R2,
-      Ha is ranks are not better in R2.
+      H0 is ranks are better in RO,
+      Ha is ranks are not better in RO.
     alternative="less":
-      H0 is ranks are better in R1,
-      Ha is ranks are not better in R1.
+      H0 is ranks are better in RB,
+      Ha is ranks are not better in RB.
     zero_method="wilcox"
-      This drops the ranks in which we have ties (score(R1, u) == score(R2, u)) for user u.
+      This drops the ranks in which we have ties (score(RB, u) == score(RO, u)) for user u.
     mode=auto
       so the test can automatically determine how to calculate the p-value. Per
       default, it changes between "exact" or "approx" if the number of users is higher than 25.
@@ -154,57 +242,49 @@ def _wilcoxon_statistic_test(
       arbitrary, idk what this means.
     """
 
-    available_hypothesis = {
-        StatisticalTestAlternative.TWO_SIDED: {
-            _HYPOTHESIS_NULL: "Ranks between recommenders are equivalent.",
-            _HYPOTHESIS_ALTERNATIVE: "Ranks between recommenders are not equivalent.",
-        },
-        StatisticalTestAlternative.GREATER: {
-            _HYPOTHESIS_NULL: "R2 ranks better than R1",
-            _HYPOTHESIS_ALTERNATIVE: "R2 does not rank better than R1",
-        },
-        StatisticalTestAlternative.LESS: {
-            _HYPOTHESIS_NULL: "R1 ranks better than R2",
-            _HYPOTHESIS_ALTERNATIVE: "R1 does not rank better than R2",
-        },
-    }
+    logger.debug(
+        f"Wilcoxon Test received the following parameters:"
+        f"\n\t* {scores_base=} - {scores_base.ndim=} - {scores_base.shape=}"
+        f"\n\t* {scores_other=} - {scores_other.ndim=} - {scores_other.shape=}"
+        f"\n\t* {alphas=}"
+        f"\n\t* {alternative=}"
+    )
 
-    if np.any(
-        np.isclose(
-            a=scores_recommender_1,
-            b=scores_recommender_2,
-        )
-    ):
-        logger.warning(
-            f"Found difference in scores close to zero. `zero_method` parameter may change the p-value and statistics."
-        )
-
+    # Definition of Wilcoxon Signed-Rank Test extracted from:
+    # https://www.jmlr.org/papers/volume7/demsar06a/demsar06a.pdf, section 3.1.3
+    # Zero method is set as `zsplit` as in the paper
+    # The mode computes the p-value in an analytical or probabilistic way.
+    # The correction is not included as the paper does not correct.
+    # In a one-side greater test,
     test_statistic, p_value = stats.wilcoxon(
-        x=scores_recommender_1,
-        y=scores_recommender_2,
-        zero_method=zero_method,
+        x=scores_other,
+        y=scores_base,
         alternative=alternative.value,
+        zero_method="zsplit",
         mode="auto",
-        correction=correction,
+        correction=False,
     )
 
     hypothesis = _get_final_hypothesis(
         p_value=p_value,
+        alphas=alphas,
     )
 
-    textual_hypothesis = available_hypothesis[alternative][hypothesis]
+    logger.debug(
+        f"Wilcoxon Test Debug purposes"
+        f"\n\t* {hypothesis=}"
+        f"\n\t* {test_statistic=}"
+        f"\n\t* {p_value=}"
+        f"\n\t* {alphas=}"
+    )
 
-    return dict(
+    return ResultsWilcoxonTest(
         test_statistic=test_statistic,
         p_value=p_value,
-        p_value_reliable=True,
         hypothesis=hypothesis,
-        textual_hypothesis=textual_hypothesis,
         kwargs=dict(
-            zero_method=zero_method,
             alternative=alternative,
-            mode="auto",
-            correction=correction,
+            alphas=alphas,
         )
     )
 
@@ -273,63 +353,65 @@ def _cochrans_q_statistic_test(
 
 def _friedman_chi_square_statistical_test(
     scores: np.ndarray,
-    num_users: int,
-    num_recommenders: int,
-) -> Any:
+    alphas: Sequence[float],
+) -> ResultsFriedmanTest:
     """
     Notes
     -----
     Definition
         H0 (null hypothesis)
-            all recommenders are equivalent.
+            The scores of recommenders are equivalent.
         Ha (alternative hypothesis):
-            At least two recommenders are not equivalent
+            The scores across recommenders are different
 
-    The method :class:`statsmodels.api.stats.friedmanchisquare` requires the comparison of at least 7 recommenders
-    so the p-value is reliable.
-
+    This method requires the comparison of at least 7 recommenders and 10 users so the p-value is reliable.
     """
-    assert num_users > 10
+    assert scores.ndim == 2
+    num_recommenders, num_users = scores.shape
+
     assert num_recommenders >= 3
 
     p_value_reliable = True
-    if num_recommenders <= 6:
+    if num_recommenders <= 6 or num_users <= 10:
         p_value_reliable = False
         logger.warning(
-            f"The method `stats.friedmanchisquare` requires the comparison of at least 7 recommenders."
+            f"The method `stats.friedmanchisquare` requires the comparison of at least 7 recommenders "
+            f"(got {num_recommenders}) and at least 10 users (got {num_users}). "
         )
 
-    # Notes on the Friedman Chi^2 statistic.
-    # H0 (null hypothesis): all recommenders are equivalent.
-    # Ha (alternative hypothesis): At least two recommenders are not equivalent.
+    # Implementation note: the function `stats.friedmanchisquare` requires each array of recommender scores (vector
+    # of size 1xN, where N is the number of users), to be passed as an argument.
+    # Passing a numpy array as *array sends the function each row as a separate argument. Hence, in this case,
+    # we are complying with what the function expects, as the `scores` array is a MxN array, where M is the number of
+    # recommenders. *scores passes each row (each recommender score) as an argument.
     test_statistic, p_value = stats.friedmanchisquare(
         *scores
     )
 
     hypothesis = _get_final_hypothesis(
         p_value=p_value,
+        alphas=alphas,
     )
 
-    return dict(
+    return ResultsFriedmanTest(
         test_statistic=test_statistic,
+        num_measurements=num_recommenders,
         p_value=p_value,
         p_value_reliable=p_value_reliable,
         hypothesis=hypothesis,
         kwargs=dict(
-            num_users=num_users,
-            num_recommenders=num_recommenders,
+            alphas=alphas,
         )
     )
 
 
 def _sign_test(
-    scores_recommender_1: np.ndarray,
-    scores_recommender_2: np.ndarray,
-    num_users: int,
+    scores_base: np.ndarray,
+    scores_other: np.ndarray,
+    alphas: Sequence[float],
     alternative: StatisticalTestAlternative,
-    handle_ties: SignTestHandleTies,
-) -> dict[str, Any]:
-    """Computes a Sign Statistical Test between two recommenders.
+) -> ResultsSignTest:
+    """Computes a Sign Statistical Test between the scores of two recommenders.
 
     The assumption of this test is that each user in the test set is independent, therefore, the scores obtained for
     each user are i.i.d. To reject or not the null hypothesis, the Sign Test determines statistically if the scores
@@ -339,30 +421,30 @@ def _sign_test(
     recommender is better than the other.
 
     if `alternative` ==  `StatisticalTestAlternative.TWO_SIDED`:
-        H0 (null hypothesis): R1 1 and R2 are equivalent, i.e., their scores are equivalent.
+        H0 (null hypothesis): RB and RO are equivalent, i.e., their scores are equivalent.
         Ha (alternative hypothesis): Any of the two are not equivalent, i.e., one is better/worse than the other.
 
     if `alternative` ==  `StatisticalTestAlternative.GREATER`:
-        H0 (null hypothesis): R1 is not better than R2, i.e., scores for R2 are higher than R1.
-        Ha (alternative hypothesis): R1 is better than R2. i.e., scores for R1 are higher than R2.
+        H0 (null hypothesis): RO is not better than RB, i.e., scores for RB are higher than RO.
+        Ha (alternative hypothesis): RO is better than RB. i.e., scores for RO are higher than RB.
 
     if `alternative` ==  `StatisticalTestAlternative.LESS`:
-        H0 (null hypothesis): R2 is not better than R1, i.e., scores for R1 are higher than R2.
-        Ha (alternative hypothesis): R2 is better than R1. i.e., scores for R2 are higher than R1.
+        H0 (null hypothesis): RB is not better than RO, i.e., scores for RO are higher than RB.
+        Ha (alternative hypothesis): RB is better than RO. i.e., scores for RB are higher than RO.
     ``
 
     One of the fundamental components of the test is the number of successes, being a success the number of times
-    the score in the recommender 1 is greater than (or greater or equal than) recommender 2. If the test measures
-    "strict" improvement, i.e., recommender 1 is strictly better than recommender 2, then use
-    `mode=SignTestHandleTies.STRICTLY_GREATER`, on the contrary, if the recommender can perform equally to
-    recommender 2, then `mode=SignTestHandleTies.GREATER_OR_EQUAL`
+    the score in RO is greater than (or greater or equal than) RB. If the test measures
+    "strict" improvement, i.e., RO is strictly better than RB, then use
+    `mode=SignTestHandleTies.STRICTLY_GREATER`, on the contrary, if RO may perform equally to
+    RB, then `mode=SignTestHandleTies.GREATER_OR_EQUAL`
 
     Practically:
 
     if `mode` ==  `SignTestHandleTies.STRICTLY_GREATER`:
-        successes: Number of times `scores_recommender_1[i]` > `scores_recommender_2[i]`
+        successes: Number of times `scores_other[i]` > `scores_base[i]`
     else:
-        successes: Number of times `scores_recommender_1[i]` >= `scores_recommender_2[i]`
+        successes: Number of times `scores_other[i]` >= `scores_base[i]`
 
     Notes
     -----
@@ -382,83 +464,116 @@ def _sign_test(
     .. [2] Demsar, J. (2006). Statistical Comparisons of Classifiers over Multiple Data Sets. J. Mach. Learn. Res., 7,
        1–30.
     """
-
     # Ensure these are 1-D arrays and that both arrays have the same shape.
-    assert len(scores_recommender_1.shape) == 1
-    assert scores_recommender_1.shape[0] == num_users
-    assert scores_recommender_1.shape == scores_recommender_2.shape
+    assert scores_base.ndim == 1
+    assert scores_other.ndim == 1
+    assert scores_base.shape == scores_other.shape
 
-    num_times_recommender_1_better_than_2 = np.sum(
-        scores_recommender_1 > scores_recommender_2,
+    logger.debug(
+        f"Sign Test received the following parameters:"
+        f"\n\t* {scores_base=} - {scores_base.ndim=} - {scores_base.shape}"
+        f"\n\t* {scores_other=} - {scores_other.ndim=} - {scores_other.shape}"
+        f"\n\t* {alphas=}"
+        f"\n\t* {alternative=}"
     )
 
-    num_times_recommender_2_better_than_1 = np.sum(
-        scores_recommender_1 < scores_recommender_2,
+    available_hypothesis = {
+        StatisticalTestAlternative.TWO_SIDED: {
+            StatisticalTestHypothesis.NULL: (
+                "H0 (null hypothesis): RB and RO are equivalent, i.e., their scores are equivalent."
+            ),
+            StatisticalTestHypothesis.ALTERNATIVE: (
+                "Ha (alternative hypothesis): Any of the two are not equivalent, i.e., one is better/worse than the "
+                "other."
+            ),
+        },
+        StatisticalTestAlternative.GREATER: {
+            StatisticalTestHypothesis.NULL: (
+                "H0 (null hypothesis): RO is not better than RB, i.e., scores for RB are higher than RO."
+            ),
+            StatisticalTestHypothesis.ALTERNATIVE: (
+                "Ha (alternative hypothesis): RO is better than RB. i.e., scores for RO are higher than RB."
+            ),
+        },
+        StatisticalTestAlternative.LESS: {
+            StatisticalTestHypothesis.NULL: (
+                "H0 (null hypothesis): RB is not better than RO, i.e., scores for RO are higher than RB."
+            ),
+            StatisticalTestHypothesis.ALTERNATIVE: (
+                "Ha (alternative hypothesis): RB is better than RO. i.e., scores for RB are higher than RO."
+            ),
+        },
+    }
+
+    num_users = scores_base.shape[0]
+
+    num_times_base_better_than_other = np.sum(
+        scores_base > scores_other,
     )
 
-    num_times_recommenders_are_equal = np.sum(
-        scores_recommender_1 == scores_recommender_2,
+    num_times_other_better_than_base = np.sum(
+        scores_base < scores_other,
     )
+
+    num_times_both_are_equal = np.sum(
+        scores_base == scores_other,
+    )
+
+    successes = num_times_other_better_than_base + num_times_both_are_equal // 2
+    failures = num_times_base_better_than_other + num_times_both_are_equal // 2
 
     assert (
-        num_times_recommender_1_better_than_2
-        + num_times_recommender_2_better_than_1
-        + num_times_recommenders_are_equal
+        num_times_both_are_equal % 2 == 0 and successes + failures == num_users
+    ) or (
+        num_times_both_are_equal % 2 == 1 and successes + failures + 1 == num_users
+    )
+    assert (
+        num_times_base_better_than_other + num_times_other_better_than_base + num_times_both_are_equal
     ) == num_users
 
-    if handle_ties == SignTestHandleTies.STRICTLY_GREATER:
-        successes = num_times_recommender_1_better_than_2
+    # From v1.8.1 we can use binomtest that returns a set of more comprehensive results.
+    # if scipy version is lower, then we have to use binom_test which only returns the computed alpha
 
-    else:
-        successes = num_times_recommender_1_better_than_2 + num_times_recommenders_are_equal
-
-    binomial_test_results = stats.binomtest(
-        k=successes,
+    # Sign test as defined by: https://www.jmlr.org/papers/volume7/demsar06a/demsar06a.pdf
+    # In particular, both recommenders are considered to win in 50% of the cases.
+    # Ties are not discounted but added between the successes and failures, if the num of ties is odd,
+    # then 1 is substracted.
+    p_value = stats.binom_test(
+        x=[successes, failures],
         n=num_users,
-        p=_MAX_P_VALUE,
+        p=0.5,
         alternative=alternative.value,
-    )
-
-    stat = binomial_test_results.k
-    p_value = binomial_test_results.pvalue
-    proportion = binomial_test_results.proportion_estimate
-    confidence_interval = binomial_test_results.proportion_ci(
-        confidence_level=_CONFIDENCE_INTERVAL_CONFIDENCE,
-        method="exact",
     )
 
     hypothesis = _get_final_hypothesis(
         p_value=p_value,
+        alphas=alphas,
     )
 
-    return dict(
+    return ResultsSignTest(
         p_value=p_value,
-        statistic=stat,
         hypothesis=hypothesis,
-        proportion=proportion,
-        confidence_interval=confidence_interval,
+        successes=successes,
+        failures=failures,
+        num_times_base_better_than_other=num_times_base_better_than_other,
+        num_times_other_better_than_base=num_times_other_better_than_base,
+        num_times_both_are_equal=num_times_both_are_equal,
         kwargs=dict(
+            alphas=alphas,
             alternative=alternative,
-            handle_ties=handle_ties,
-            num_times_recommender_1_better_than_2=num_times_recommender_1_better_than_2,
-            num_times_recommender_2_better_than_1=num_times_recommender_2_better_than_1,
-            num_times_recommenders_are_equal=num_times_recommenders_are_equal,
-            successes=successes,
-            non_successes=num_users - successes,
         )
     )
 
 
-# Provide an alias for the sign_test given that the McNemar and Sign Tests are equivalent.
+# Provide an alias for the sign given that the McNemar and Sign Tests are equivalent.
 # https://en.wikipedia.org/wiki/McNemar%27s_test#Related_tests
 _mc_nemar_test = _sign_test
 
 
-def _bonferroni_correction_statistical_test(
-    scores: np.ndarray,
-    num_users: int,
-    num_recommenders: int,
-) -> Any:
+def _bonferroni_correction(
+    p_values: np.ndarray,
+    alphas: Sequence[float],
+) -> ResultsBonferroniCorrection:
     """
     Notes
     -----
@@ -472,12 +587,35 @@ def _bonferroni_correction_statistical_test(
     so the p-value is reliable.
 
     """
-    pass
+    assert p_values.ndim == 1
+
+    num_experiments = float(len(p_values))
+    corrected_alphas: np.ndarray = np.asarray(alphas).astype(dtype=np.float64) / num_experiments
+    corrected_p_values: np.ndarray = np.asarray(p_values).astype(dtype=np.float64) * num_experiments
+    corrected_p_values[corrected_p_values > 1.] = 1.
+
+    hypothesis = [
+        _get_final_hypothesis(
+            p_value=p_value,
+            alphas=corrected_alphas,
+        )
+        for p_value in corrected_p_values
+    ]
+
+    return ResultsBonferroniCorrection(
+        corrected_p_values=corrected_p_values,
+        corrected_alphas=corrected_alphas,
+        hypothesis=hypothesis,
+        kwargs=dict(
+            p_values=p_values,
+            alphas=alphas,
+        )
+    )
 
 
 def calculate_confidence_intervals_on_scores_mean(
     scores: np.ndarray,
-    p_value: float = None,
+    alpha: float = None,
 ) -> ComputedConfidenceInterval:
     """
 
@@ -486,17 +624,17 @@ def calculate_confidence_intervals_on_scores_mean(
     scores : np.ndarray
         A vector of dimensions (U,) where U is the number of users to statistically test.
 
-    p_value : float
-        A floating point number between 0 and 1 indicating the percentage of confidence (1 - p_value) to use when
-        computing the confidence intervals. Smaller values of `p_value` increase the size of the interval. Bigger
-        values of `p_value` decrease the size of the interval.
+    alpha : float
+        A floating point number between 0 and 1 indicating the percentage of confidence (1 - alpha) to use when
+        computing the confidence intervals. Smaller values of `alpha` increase the size of the interval. Bigger
+        values of `alpha` decrease the size of the interval.
 
     """
-    assert len(scores.shape) == 1
-    assert p_value is None or (0. <= p_value <= 1.)
+    assert scores.ndim == 1
+    assert alpha is None or (0. <= alpha <= 1.)
 
-    if p_value is None:
-        p_value = _DEFAULT_P_VALUE
+    if alpha is None:
+        alpha = _DEFAULT_ALPHA
 
     scores_stats = sm.stats.DescrStatsW(scores)
 
@@ -504,7 +642,7 @@ def calculate_confidence_intervals_on_scores_mean(
     # However, implementation-wise using statsmodels is clearer and less error-prone
     # due to the arguments needed by the scipy's function.
     t_ci_lower, t_ci_upper = scores_stats.tconfint_mean(
-        alpha=p_value,
+        alpha=alpha,
         alternative="two-sided",
     )
 
@@ -512,7 +650,7 @@ def calculate_confidence_intervals_on_scores_mean(
     # However, implementation-wise using statsmodels is clearer and less error-prone
     # due to the arguments needed by the scipy's function.
     normal_ci_lower, normal_ci_upper = scores_stats.zconfint_mean(
-        alpha=p_value,
+        alpha=alpha,
         alternative="two-sided",
     )
 
@@ -520,7 +658,7 @@ def calculate_confidence_intervals_on_scores_mean(
         mean=scores.mean(dtype=np.float64),  # type: ignore
         std=scores.std(dtype=np.float64),  # type: ignore
         var=scores.var(dtype=np.float64),  # type: ignore
-        p_value=p_value,
+        alpha=alpha,
         confidence_intervals=[
             ConfidenceInterval(
                 algorithm="t-test",
