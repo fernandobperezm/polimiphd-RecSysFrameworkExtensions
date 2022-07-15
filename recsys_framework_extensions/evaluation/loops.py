@@ -73,6 +73,7 @@ def _nb_loop_evaluate_users(
     arr_urm_data: np.ndarray,
     arr_batch_user_ids: np.ndarray,
     arr_batch_recommended_items: np.ndarray,
+    arr_count_recommended_items: np.ndarray,
     cutoff: int,
 ) -> tuple[np.ndarray, ...]:
 
@@ -146,6 +147,9 @@ def _nb_loop_evaluate_users(
             score_recall=arr_cutoff_recall[idx_batch_user_id],
         )
 
+        for item_id in user_recommended_items:
+            arr_count_recommended_items[item_id] += 1
+
     return (
         arr_cutoff_average_precision,
         arr_cutoff_precision,
@@ -155,6 +159,7 @@ def _nb_loop_evaluate_users(
         arr_cutoff_hit_rate,
         arr_cutoff_arhr_all_hits,
         arr_cutoff_f1_score,
+        arr_count_recommended_items,
     )
 
 
@@ -164,6 +169,7 @@ _nb_loop_evaluate_users(
     arr_urm_data=np.array([1, 1], dtype=np.int32),
     arr_batch_recommended_items=np.array([[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]], dtype=np.int32),
     arr_batch_user_ids=np.array([0, 1], dtype=np.int32),
+    arr_count_recommended_items=np.array([0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int32),
     cutoff=2,
 )
 
@@ -172,6 +178,7 @@ def evaluate_loop(
     urm_test: sp.csr_matrix,
     list_batch_recommended_items: list[list[int]],
     arr_batch_user_ids: np.ndarray,
+    arr_count_recommended_items: np.ndarray,
     num_users: int,
     max_cutoff: int,
     cutoff: int,
@@ -219,7 +226,54 @@ def evaluate_loop(
         arr_urm_data=arr_urm_data,
         arr_batch_recommended_items=arr_batch_recommended_items,
         arr_batch_user_ids=arr_batch_user_ids,
+        arr_count_recommended_items=arr_count_recommended_items,
         cutoff=cutoff,
+    )
+
+
+@nb.njit
+def _nb_loop_count_recommended_items(
+    arr_count_recommended_items: np.ndarray,
+    arr_item_ids_to_ignore: np.ndarray,
+) -> tuple[float, ...]:
+
+    arr_mask_valid_recommended_items = np.ones_like(arr_count_recommended_items, dtype=np.bool_)
+    arr_mask_valid_recommended_items[arr_item_ids_to_ignore] = False
+
+    arr_count_valid_recommended_items = arr_count_recommended_items[arr_mask_valid_recommended_items]
+
+    diversity_gini = metrics.nb_diversity_gini(
+        recommended_counter=arr_count_valid_recommended_items,
+    )
+    diversity_herfindahl = metrics.nb_diversity_herfindahl(
+        recommended_counter=arr_count_valid_recommended_items,
+    )
+    shannon_entropy = metrics.nb_shannon_entropy(
+        recommended_counter=arr_count_valid_recommended_items,
+    )
+
+    return (
+        diversity_gini,
+        diversity_herfindahl,
+        shannon_entropy
+    )
+
+
+def count_recommended_items_loop(
+    arr_count_recommended_items: np.ndarray,
+    arr_item_ids_to_ignore: np.ndarray,
+) -> tuple[float, ...]:
+    arr_count_recommended_items = np.asarray(
+        arr_count_recommended_items, dtype=np.int32,
+    )
+
+    arr_item_ids_to_ignore = np.asarray(
+        arr_item_ids_to_ignore, dtype=np.int32,
+    )
+
+    return _nb_loop_count_recommended_items(
+        arr_item_ids_to_ignore=arr_item_ids_to_ignore,
+        arr_count_recommended_items=arr_count_recommended_items,
     )
 
 
