@@ -127,6 +127,47 @@ class NumpyDataMixin:
         return np_arr
 
 
+class NumpyDictDataMixin:
+    encoding = "ASCII"
+    allow_pickle = True  # Loading impressions (arrays of arrays) require allow_pickle=True
+
+    def _to_numpy_dict(
+        self,
+        dict_arrays: dict[str, np.ndarray],
+        file_path: str,
+    ) -> None:
+        np.savez(
+            file=file_path,
+            **dict_arrays,
+        )
+
+    def load_dict_from_numpy(
+        self,
+        file_path: str,
+        to_dict_func: Callable[[], dict[str, np.ndarray]],
+    ) -> dict[str, np.ndarray]:
+        loaded_dict: dict[str, np.ndarray] = {}
+
+        if not os.path.exists(file_path):
+            loaded_dict = to_dict_func()
+            self._to_numpy_dict(
+                dict_arrays=loaded_dict,
+                file_path=file_path,
+            )
+
+        else:
+            npz_data: dict[str, np.ndarray]
+            with np.load(
+                file_path,
+                encoding=self.encoding,
+                allow_pickle=self.allow_pickle
+            ) as npz_data:
+                for k,v in npz_data.items():
+                    loaded_dict[k] = v
+
+        return loaded_dict
+
+
 class ParquetDataMixin:
     engine = "pyarrow"
     use_nullable_dtypes = True
