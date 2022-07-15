@@ -9,8 +9,8 @@ import recsys_framework_extensions.evaluation.statistics_tests as st_tests
 import scipy.sparse as sp
 from Evaluation.Evaluator import EvaluatorHoldout, EvaluatorMetrics, get_result_string_df
 from Recommenders.BaseRecommender import BaseRecommender
-from recsys_framework_extensions.data.mixins import ParquetDataMixin
-from recsys_framework_extensions.evaluation.loops import evaluate_loop
+from recsys_framework_extensions.data.mixins import ParquetDataMixin, NumpyDictDataMixin
+from recsys_framework_extensions.evaluation.loops import evaluate_loop, count_recommended_items_loop
 from recsys_framework_extensions.logging import get_logger
 from tqdm import tqdm
 
@@ -20,12 +20,12 @@ logger = get_logger(
 )
 
 
-class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
-    """EvaluatorHoldoutToDisk
+class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictDataMixin):
+    """ExtendedEvaluatorHoldout
 
     """
 
-    EVALUATOR_NAME = "EvaluatorHoldoutToDisk"
+    EVALUATOR_NAME = "ExtendedEvaluatorHoldout"
 
     def __init__(
         self,
@@ -55,7 +55,6 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
             str(cutoff)
             for cutoff in self._cutoffs
         ]
-        self._str_cutoffs = ["10", "50"]
 
         self._metrics = [
             EvaluatorMetrics.MAP,
@@ -66,59 +65,84 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
             EvaluatorMetrics.HIT_RATE,
             EvaluatorMetrics.ARHR,
             EvaluatorMetrics.F1,
+            EvaluatorMetrics.DIVERSITY_GINI,
+            EvaluatorMetrics.DIVERSITY_HERFINDAHL,
+            EvaluatorMetrics.SHANNON_ENTROPY,
         ]
         self._str_metrics: list[str] = [
             metric.value
             for metric in self._metrics
         ]
 
+    def compute_mean_score_on_evaluated_users(
+        self,
+        recommender_object: BaseRecommender,
+    ) -> pd.DataFrame:
+        df_scores, dict_recommended_item_distribution = self._evaluate_recommender(
+            recommender=recommender_object
+        )
+
+        num_users_evaluated = df_scores.shape[0]
+        if num_users_evaluated <= 0:
+            raise ValueError("TODO: fernando-debugger complete")
+
+        df_mean_scores = df_scores.describe()
+
+        for cutoff, metric in df_scores.columns:
+            # The for-loop is to correct the value of the F1 metric.
+            # The original framework computes the F1 only on the mean precision and recall.
+            if EvaluatorMetrics.F1.value != metric:
+                continue
+
+            mean_precision = df_mean_scores[(cutoff, EvaluatorMetrics.PRECISION.value)]["mean"]
+            mean_recall = df_mean_scores[(cutoff, EvaluatorMetrics.RECALL.value)]["mean"]
+
+            df_mean_scores[(cutoff, EvaluatorMetrics.F1.value)]["mean"] = (
+                0.
+                if np.isclose(mean_precision + mean_recall, 0.)
+                else (
+                    (2 * mean_precision * mean_recall)
+                    / (mean_precision + mean_recall)
+                )
+            )
+
+        for cutoff in self._str_cutoffs:
+            (
+                diversity_gini,
+                diversity_herfindahl,
+                shannon_entropy
+            ) = count_recommended_items_loop(
+                arr_count_recommended_items=dict_recommended_item_distribution[cutoff],
+                arr_item_ids_to_ignore=self.ignore_items_ID,
+            )
+
+            df_mean_scores[(cutoff, EvaluatorMetrics.DIVERSITY_GINI.value)]["mean"] = diversity_gini
+            df_mean_scores[(cutoff, EvaluatorMetrics.DIVERSITY_HERFINDAHL.value)]["mean"] = diversity_herfindahl
+            df_mean_scores[(cutoff, EvaluatorMetrics.SHANNON_ENTROPY.value)]["mean"] = shannon_entropy
+
+        return df_mean_scores
+
     def evaluateRecommender(
         self,
         recommender_object: BaseRecommender,
     ):
-        df_scores = self._evaluate_recommender(
-            recommender=recommender_object
-        )
-        num_users_evaluated = df_scores.shape[0]
-
         dict_results = self._create_empty_results_dict()
 
-        if num_users_evaluated > 0:
-            for cutoff in self._str_cutoffs:
-                for metric in self._str_metrics:
-                    # The original framework computes the F1 only on the mean precision and recall.
-                    # Computing the f1 and then taking the mean is equivalent.
-                    mean_cutoff_metric_score = df_scores[(cutoff, metric)].mean()
+        df_mean_scores = self.compute_mean_score_on_evaluated_users(
+            recommender_object=recommender_object,
+        )
 
-                    if EvaluatorMetrics.F1.value == metric:
-                        precision = df_scores[(cutoff, EvaluatorMetrics.PRECISION.value)].mean()
-                        recall = df_scores[(cutoff, EvaluatorMetrics.RECALL.value)].mean()
+        for cutoff, metric in itertools.product(self._str_cutoffs, self._str_metrics):
+            dict_results[int(cutoff)][metric] = df_mean_scores[(cutoff, metric)]["mean"]
 
-                        if np.isclose(precision + recall, 0):
-                            mean_cutoff_metric_score = 0.
-                        else:
-                            mean_cutoff_metric_score = (
-                                (2 * precision * recall)
-                                / (precision + recall)
-                            )
-
-                    dict_results[int(cutoff)][metric] = mean_cutoff_metric_score
-        else:
-            logger.warning(
-                "No users had a sufficient number of relevant items"
-            )
-
-        df_results = pd.DataFrame(
-            columns=dict_results[self.cutoff_list[0]].keys(),
-            index=self.cutoff_list,
+        df_results = pd.DataFrame.from_dict(
+            data=dict_results,
+            orient="index",
         )
         df_results.index.rename(
-            "cutoff",
-            inplace=True,
+            name="cutoff",
+            inplace=True
         )
-
-        for int_cutoff in dict_results.keys():
-            df_results.loc[str(int_cutoff)] = dict_results[int_cutoff]
 
         results_run_string = get_result_string_df(df_results)
 
@@ -129,92 +153,49 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
         recommender: BaseRecommender,
         recommender_name: str,
         folder_export_results: str,
-    ) -> pd.DataFrame:
-
-        file_path = os.path.join(
+    ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
+        file_path_results_dataframe = os.path.join(
             folder_export_results, f"{recommender_name}_accuracy.parquet"
         )
-        partial_evaluate_recommender = partial(
-            self._evaluate_recommender,
-            recommender=recommender
+        file_path_results_recommended_item_distribution = os.path.join(
+            folder_export_results, f"{recommender_name}_recommended_item_distribution.npz"
         )
 
-        df_results = self.load_parquet(
-            file_path=file_path,
-            to_pandas_func=partial_evaluate_recommender,
-        )
-        return df_results
+        if all(os.path.exists(f) for f in [
+            file_path_results_dataframe,
+            file_path_results_recommended_item_distribution,
+        ]):
+            # If files exists, just load them from disk.
+            df_results = self.load_parquet(
+                file_path=file_path_results_dataframe,
+                to_pandas_func=lambda: pd.DataFrame(),
+            )
 
-    def compute_recommenders_statistical_tests(
-        self,
-        recommender_baseline: BaseRecommender,
-        recommender_baseline_name: str,
-        recommender_baseline_folder: str,
-        recommender_others: Sequence[BaseRecommender],
-        recommender_others_names: Sequence[str],
-        recommender_others_folders: Sequence[str],
-        folder_export_results: str,
-    ) -> Sequence[pd.DataFrame]:
-        file_paths = [
-            os.path.join(folder_export_results, f"{recommender_baseline_name}_groupwise_statistical_tests.parquet"),
-            os.path.join(folder_export_results, f"{recommender_baseline_name}_pairwise_statistical_tests.parquet"),
-        ]
+            dict_recommended_item_distribution = self.load_dict_from_numpy(
+                file_path=file_path_results_recommended_item_distribution,
+                to_dict_func=lambda: {"a": np.array([])},
+            )
 
-        partial_compute_recommenders_statistical_tests = partial(
-            self._compute_recommenders_statistical_tests,
-            recommender_baseline=recommender_baseline,
-            recommender_baseline_name=recommender_baseline_name,
-            recommender_baseline_folder=recommender_baseline_folder,
-            recommender_others=recommender_others,
-            recommender_others_names=recommender_others_names,
-            recommender_others_folders=recommender_others_folders,
-        )
+        else:
+            # Compute them and save them to disk.
+            df_results, dict_recommended_item_distribution = self._evaluate_recommender(
+                recommender=recommender,
+            )
+            _ = self.load_parquet(
+                file_path=file_path_results_dataframe,
+                to_pandas_func=lambda: df_results,
+            )
+            _ = self.load_dict_from_numpy(
+                file_path=file_path_results_recommended_item_distribution,
+                to_dict_func=lambda: dict_recommended_item_distribution,
+            )
 
-        df_results_groupwise, df_results_pairwise = self.load_parquets(
-            file_paths=file_paths,
-            to_pandas_func=partial_compute_recommenders_statistical_tests,
-        )
-
-        return df_results_groupwise, df_results_pairwise
-
-    def compute_recommender_confidence_intervals(
-        self,
-        recommender: BaseRecommender,
-        recommender_name: str,
-        folder_export_results: str,
-    ) -> pd.DataFrame:
-        file_path = os.path.join(
-            folder_export_results, f"{recommender_name}_confidence_intervals.parquet"
-        )
-        partial_evaluate_recommender = partial(
-            self._compute_recommender_confidence_intervals,
-            recommender=recommender,
-            recommender_name=recommender_name,
-            folder_export_results=folder_export_results,
-        )
-
-        df_results = self.load_parquet(
-            file_path=file_path,
-            to_pandas_func=partial_evaluate_recommender,
-        )
-
-        return df_results
-
-    def _create_empty_results_dict(
-        self
-    ) -> dict[int, dict[str, float]]:
-        return {
-            cutoff: {
-                metric: 0.
-                for metric in self._str_metrics
-            }
-            for cutoff in self.cutoff_list
-        }
+        return df_results, dict_recommended_item_distribution
 
     def _evaluate_recommender(
         self,
         recommender: BaseRecommender,
-    ) -> pd.DataFrame:
+    ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
         if self.ignore_items_flag:
             recommender.set_items_to_ignore(
                 items_to_ignore=self.ignore_items_ID
@@ -231,12 +212,23 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
         )
 
         num_users = arr_user_ids.shape[0]
+        num_items = self.URM_test.shape[1]
 
         list_df_results = []
 
         logger.info(
             f"Evaluating recommender."
         )
+
+        dict_cutoff_recommended_user_counters: dict[str, np.ndarray] = {
+            cutoff: np.zeros(shape=(num_users,), dtype=np.int32)
+            for cutoff in self._str_cutoffs
+        }
+        dict_cutoff_recommended_item_counters: dict[str, np.ndarray] = {
+            cutoff: np.zeros(shape=(num_items,), dtype=np.int32)
+            for cutoff in self._str_cutoffs
+        }
+
         for arr_batch_user_id in tqdm(arr_user_ids_batches):
             list_batch_recommended_items: list[list[int]] = recommender.recommend(
                 arr_batch_user_id,
@@ -272,10 +264,12 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
                     arr_cutoff_hit_rate,
                     arr_cutoff_arhr_all_hits,
                     arr_cutoff_f1_score,
+                    arr_count_recommended_items,
                 ) = evaluate_loop(
                     urm_test=self.URM_test,
                     list_batch_recommended_items=list_batch_recommended_items,
                     arr_batch_user_ids=arr_batch_user_id,
+                    arr_count_recommended_items=dict_cutoff_recommended_item_counters[str(cutoff)],
                     num_users=num_users,
                     max_cutoff=self.max_cutoff,
                     cutoff=cutoff,
@@ -290,6 +284,14 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
                 df_results[(str(cutoff), EvaluatorMetrics.ARHR.value)] = arr_cutoff_arhr_all_hits
                 df_results[(str(cutoff), EvaluatorMetrics.F1.value)] = arr_cutoff_f1_score
 
+                # Diversity metrics only make sense when computed on all users, here we're only using a placeholder
+                # value.
+                df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_GINI.value)] = 0.
+                df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_HERFINDAHL.value)] = 0.
+                df_results[(str(cutoff), EvaluatorMetrics.SHANNON_ENTROPY.value)] = 0.
+
+                dict_cutoff_recommended_item_counters[str(cutoff)] = arr_count_recommended_items
+
             if self.ignore_items_flag:
                 recommender.reset_items_to_ignore()
 
@@ -300,63 +302,39 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
             axis="index",
         )
 
-        return df_results
+        return df_results, dict_cutoff_recommended_item_counters
 
-    def _compute_recommender_confidence_intervals(
+    def compute_recommenders_statistical_tests(
         self,
-        recommender: BaseRecommender,
-        recommender_name: str,
+        recommender_baseline: BaseRecommender,
+        recommender_baseline_name: str,
+        recommender_baseline_folder: str,
+        recommender_others: Sequence[BaseRecommender],
+        recommender_others_names: Sequence[str],
+        recommender_others_folders: Sequence[str],
         folder_export_results: str,
-    ) -> pd.DataFrame:
-        df_scores = self.evaluate_recommender(
-            recommender=recommender,
-            recommender_name=recommender_name,
-            folder_export_results=folder_export_results,
+    ) -> Sequence[pd.DataFrame]:
+        file_paths = [
+            os.path.join(folder_export_results, f"{recommender_baseline_name}_groupwise_statistical_tests.parquet"),
+            os.path.join(folder_export_results, f"{recommender_baseline_name}_pairwise_statistical_tests.parquet"),
+        ]
+
+        partial_compute_recommenders_statistical_tests = partial(
+            self._compute_recommenders_statistical_tests,
+            recommender_baseline=recommender_baseline,
+            recommender_baseline_name=recommender_baseline_name,
+            recommender_baseline_folder=recommender_baseline_folder,
+            recommender_others=recommender_others,
+            recommender_others_names=recommender_others_names,
+            recommender_others_folders=recommender_others_folders,
         )
 
-        cutoffs = self._str_cutoffs
-        metrics = self._str_metrics
-        stats = ["mean", "std", "var"]
-        algorithms = ["t-test", "normal"]
-        ci_values = ["lower", "upper"]
-        p_values = [0.1, 0.05, 0.01, 0.001]
-        str_p_values = [str(p_value) for p_value in p_values]
-
-        columns = [("recommender", "", "", "", "")]
-        for cutoff, metric in itertools.product(cutoffs, metrics):
-            columns += itertools.product([cutoff], [metric], stats, [""], [""])
-            columns += itertools.product([cutoff], [metric], algorithms, str_p_values, ci_values)
-
-        data: dict[tuple, list] = {
-            col: []
-            for col in columns
-        }
-        data[("recommender", "", "", "", "")].append(recommender_name)
-        for cutoff in self._str_cutoffs:
-            for metric in self._str_metrics:
-                scores = df_scores[(cutoff, metric)].to_numpy(dtype=np.float64)
-
-                data[(cutoff, metric, "mean", "", "")].append(scores.mean(dtype=np.float64))
-                data[(cutoff, metric, "std", "", "")].append(scores.std(dtype=np.float64))
-                data[(cutoff, metric, "var", "", "")].append(scores.var(dtype=np.float64))
-
-                for p_value in p_values:
-                    recommender_confidence_intervals = st_tests.calculate_confidence_intervals_on_scores_mean(
-                        scores=scores,
-                        alpha=p_value,
-                    )
-
-                    for computed_ci in recommender_confidence_intervals.confidence_intervals:
-                        data[(cutoff, metric, computed_ci.algorithm, str(p_value), "lower")].append(computed_ci.lower)
-                        data[(cutoff, metric, computed_ci.algorithm, str(p_value), "upper")].append(computed_ci.upper)
-
-        mi_columns = pd.MultiIndex.from_tuples(columns)
-
-        df_results = pd.DataFrame(
-            data=data,
-            columns=mi_columns,
+        df_results_groupwise, df_results_pairwise = self.load_parquets(
+            file_paths=file_paths,
+            to_pandas_func=partial_compute_recommenders_statistical_tests,
         )
-        return df_results
+
+        return df_results_groupwise, df_results_pairwise
 
     def _compute_recommenders_statistical_tests(
         self,
@@ -367,7 +345,7 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
         recommender_others_names: Sequence[str],
         recommender_others_folders: Sequence[str],
     ) -> list[pd.DataFrame]:
-        df_scores_baseline = self.evaluate_recommender(
+        df_scores_baseline, _ = self.evaluate_recommender(
             recommender=recommender_baseline,
             recommender_name=recommender_baseline_name,
             folder_export_results=recommender_baseline_folder,
@@ -378,7 +356,7 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
                 recommender=recommender,
                 recommender_name=recommender_name,
                 folder_export_results=recommender_folder,
-            )
+            )[0]
             for recommender, recommender_name, recommender_folder in zip(
                 recommender_others, recommender_others_names, recommender_others_folders,
             )
@@ -438,89 +416,88 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
             for rec_name in recommender_others_names
         ]
 
-        for cutoff in self._str_cutoffs:
-            for metric in self._str_metrics:
-                # np.asarray converts the array to shape (# recommenders, # users), the functions need
-                # arrays of shape (# users, # recommenders). Hence, we transpose the scores.
-                arr_scores_baseline = df_scores_baseline[(cutoff, metric)].to_numpy(
-                    dtype=np.float64
-                )
-                arr_scores_others = np.vstack(
-                    [
-                        df[(cutoff, metric)].to_numpy(dtype=np.float64)
-                        for df in list_df_scores_others
-                    ],
+        for cutoff, metric in itertools.product(self._str_cutoffs, self._str_metrics):
+            # np.asarray converts the array to shape (# recommenders, # users), the functions need
+            # arrays of shape (# users, # recommenders). Hence, we transpose the scores.
+            arr_scores_baseline = df_scores_baseline[(cutoff, metric)].to_numpy(
+                dtype=np.float64
+            )
+            arr_scores_others = np.vstack(
+                [
+                    df[(cutoff, metric)].to_numpy(dtype=np.float64)
+                    for df in list_df_scores_others
+                ],
+            )
+
+            for alternative in alternatives:
+                results_statistical_tests = st_tests.compute_statistical_tests_of_base_vs_others(
+                    scores_base=arr_scores_baseline,
+                    scores_others=arr_scores_others,
+                    alphas=alphas,
+                    alternative=alternative,
                 )
 
-                for alternative in alternatives:
-                    results_statistical_tests = st_tests.compute_statistical_tests_of_base_vs_others(
-                        scores_base=arr_scores_baseline,
-                        scores_others=arr_scores_others,
-                        alphas=alphas,
-                        alternative=alternative,
+                for idx, alpha in enumerate(alphas):
+                    data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "alpha")].append(
+                        alpha
+                    )
+                    data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "p_value")].append(
+                        results_statistical_tests.friedman.p_value
+                    )
+                    data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "hypothesis")].append(
+                        results_statistical_tests.friedman.hypothesis[idx].value
+                    )
+                    data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "num_measurements")].append(
+                        results_statistical_tests.friedman.num_measurements
                     )
 
-                    for idx, alpha in enumerate(alphas):
-                        data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "alpha")].append(
-                            alpha
-                        )
-                        data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "p_value")].append(
-                            results_statistical_tests.friedman.p_value
-                        )
-                        data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "hypothesis")].append(
-                            results_statistical_tests.friedman.hypothesis[idx].value
-                        )
-                        data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "num_measurements")].append(
-                            results_statistical_tests.friedman.num_measurements
-                        )
+                    data_pairwise[(cutoff, metric, "wilcoxon", alternative.value, str(alpha), "alpha")] += [
+                        alpha
+                    ] * num_other_recommenders
+                    data_pairwise[(cutoff, metric, "wilcoxon", alternative.value, str(alpha), "p_value")] += [
+                        res.p_value
+                        for res in results_statistical_tests.wilcoxon
+                    ]
+                    data_pairwise[(cutoff, metric, "wilcoxon", alternative.value, str(alpha), "hypothesis")] += [
+                        res.hypothesis[idx].value
+                        for res in results_statistical_tests.wilcoxon
+                    ]
 
-                        data_pairwise[(cutoff, metric, "wilcoxon", alternative.value, str(alpha), "alpha")] += [
-                            alpha
-                        ] * num_other_recommenders
-                        data_pairwise[(cutoff, metric, "wilcoxon", alternative.value, str(alpha), "p_value")] += [
-                            res.p_value
-                            for res in results_statistical_tests.wilcoxon
-                        ]
-                        data_pairwise[(cutoff, metric, "wilcoxon", alternative.value, str(alpha), "hypothesis")] += [
-                            res.hypothesis[idx].value
-                            for res in results_statistical_tests.wilcoxon
-                        ]
+                    data_pairwise[(cutoff, metric, "sign", alternative.value, str(alpha), "alpha")] += [
+                        alpha
+                    ] * num_other_recommenders
+                    data_pairwise[(cutoff, metric, "sign", alternative.value, str(alpha), "p_value")] += [
+                        res.p_value
+                        for res in results_statistical_tests.sign
+                    ]
+                    data_pairwise[(cutoff, metric, "sign", alternative.value, str(alpha), "hypothesis")] += [
+                        res.hypothesis[idx].value
+                        for res in results_statistical_tests.sign
+                    ]
 
-                        data_pairwise[(cutoff, metric, "sign", alternative.value, str(alpha), "alpha")] += [
-                            alpha
-                        ] * num_other_recommenders
-                        data_pairwise[(cutoff, metric, "sign", alternative.value, str(alpha), "p_value")] += [
-                            res.p_value
-                            for res in results_statistical_tests.sign
-                        ]
-                        data_pairwise[(cutoff, metric, "sign", alternative.value, str(alpha), "hypothesis")] += [
-                            res.hypothesis[idx].value
-                            for res in results_statistical_tests.sign
-                        ]
+                    data_pairwise[(cutoff, metric, "bonferroni-wilcoxon", alternative.value, str(alpha), "alpha")] += [
+                        results_statistical_tests.bonferroni_wilcoxon.corrected_alphas[idx]
+                    ] * num_other_recommenders
+                    data_pairwise[(cutoff, metric, "bonferroni-wilcoxon", alternative.value, str(alpha), "p_value")] += [
+                        p_val
+                        for p_val in results_statistical_tests.bonferroni_wilcoxon.corrected_p_values
+                    ]
+                    data_pairwise[(cutoff, metric, "bonferroni-wilcoxon", alternative.value, str(alpha), "hypothesis")] += [
+                        h[idx].value
+                        for h in results_statistical_tests.bonferroni_wilcoxon.hypothesis
+                    ]
 
-                        data_pairwise[(cutoff, metric, "bonferroni-wilcoxon", alternative.value, str(alpha), "alpha")] += [
-                            results_statistical_tests.bonferroni_wilcoxon.corrected_alphas[idx]
-                        ] * num_other_recommenders
-                        data_pairwise[(cutoff, metric, "bonferroni-wilcoxon", alternative.value, str(alpha), "p_value")] += [
-                            p_val
-                            for p_val in results_statistical_tests.bonferroni_wilcoxon.corrected_p_values
-                        ]
-                        data_pairwise[(cutoff, metric, "bonferroni-wilcoxon", alternative.value, str(alpha), "hypothesis")] += [
-                            h[idx].value
-                            for h in results_statistical_tests.bonferroni_wilcoxon.hypothesis
-                        ]
-
-                        data_pairwise[(cutoff, metric, "bonferroni-sign", alternative.value, str(alpha), "alpha")] += [
-                            results_statistical_tests.bonferroni_sign.corrected_alphas[idx]
-                        ] * num_other_recommenders
-                        data_pairwise[(cutoff, metric, "bonferroni-sign", alternative.value, str(alpha), "p_value")] += [
-                            p_val
-                            for p_val in results_statistical_tests.bonferroni_sign.corrected_p_values
-                        ]
-                        data_pairwise[(cutoff, metric, "bonferroni-sign", alternative.value, str(alpha), "hypothesis")] += [
-                            h[idx].value
-                            for h in results_statistical_tests.bonferroni_sign.hypothesis
-                        ]
+                    data_pairwise[(cutoff, metric, "bonferroni-sign", alternative.value, str(alpha), "alpha")] += [
+                        results_statistical_tests.bonferroni_sign.corrected_alphas[idx]
+                    ] * num_other_recommenders
+                    data_pairwise[(cutoff, metric, "bonferroni-sign", alternative.value, str(alpha), "p_value")] += [
+                        p_val
+                        for p_val in results_statistical_tests.bonferroni_sign.corrected_p_values
+                    ]
+                    data_pairwise[(cutoff, metric, "bonferroni-sign", alternative.value, str(alpha), "hypothesis")] += [
+                        h[idx].value
+                        for h in results_statistical_tests.bonferroni_sign.hypothesis
+                    ]
 
         mi_columns_groupwise = pd.MultiIndex.from_tuples(columns_groupwise)
         mi_columns_pairwise = pd.MultiIndex.from_tuples(columns_pairwise)
@@ -538,3 +515,94 @@ class EvaluatorHoldoutToDisk(EvaluatorHoldout, ParquetDataMixin):
         return [
             df_results_groupwise, df_results_pairwise,
         ]
+
+    def compute_recommender_confidence_intervals(
+        self,
+        recommender: BaseRecommender,
+        recommender_name: str,
+        folder_export_results: str,
+    ) -> pd.DataFrame:
+        file_path = os.path.join(
+            folder_export_results, f"{recommender_name}_confidence_intervals.parquet"
+        )
+        partial_evaluate_recommender = partial(
+            self._compute_recommender_confidence_intervals,
+            recommender=recommender,
+            recommender_name=recommender_name,
+            folder_export_results=folder_export_results,
+        )
+
+        df_results = self.load_parquet(
+            file_path=file_path,
+            to_pandas_func=partial_evaluate_recommender,
+        )
+
+        return df_results
+
+    def _compute_recommender_confidence_intervals(
+        self,
+        recommender: BaseRecommender,
+        recommender_name: str,
+        folder_export_results: str,
+    ) -> pd.DataFrame:
+        df_scores, _ = self.evaluate_recommender(
+            recommender=recommender,
+            recommender_name=recommender_name,
+            folder_export_results=folder_export_results,
+        )
+
+        cutoffs = self._str_cutoffs
+        metrics = self._str_metrics
+        stats = ["mean", "std", "var"]
+        algorithms = ["t-test", "normal"]
+        ci_values = ["lower", "upper"]
+        p_values = [0.1, 0.05, 0.01, 0.001]
+        str_p_values = [str(p_value) for p_value in p_values]
+
+        columns = [("recommender", "", "", "", "")]
+        for cutoff, metric in itertools.product(cutoffs, metrics):
+            columns += itertools.product([cutoff], [metric], stats, [""], [""])
+            columns += itertools.product([cutoff], [metric], algorithms, str_p_values, ci_values)
+
+        data: dict[tuple, list] = {
+            col: []
+            for col in columns
+        }
+        data[("recommender", "", "", "", "")].append(recommender_name)
+        for cutoff, metric in itertools.product(self._str_cutoffs, self._str_metrics):
+            scores = df_scores[(cutoff, metric)].to_numpy(dtype=np.float64)
+
+            data[(cutoff, metric, "mean", "", "")].append(scores.mean(dtype=np.float64))
+            data[(cutoff, metric, "std", "", "")].append(scores.std(dtype=np.float64))
+            data[(cutoff, metric, "var", "", "")].append(scores.var(dtype=np.float64))
+
+            for p_value in p_values:
+                recommender_confidence_intervals = st_tests.calculate_confidence_intervals_on_scores_mean(
+                    scores=scores,
+                    alpha=p_value,
+                )
+
+                for computed_ci in recommender_confidence_intervals.confidence_intervals:
+                    data[(cutoff, metric, computed_ci.algorithm, str(p_value), "lower")].append(computed_ci.lower)
+                    data[(cutoff, metric, computed_ci.algorithm, str(p_value), "upper")].append(computed_ci.upper)
+
+        mi_columns = pd.MultiIndex.from_tuples(columns)
+
+        df_results = pd.DataFrame(
+            data=data,
+            columns=mi_columns,
+        )
+        return df_results
+
+    def _create_empty_results_dict(
+        self
+    ) -> dict[int, dict[str, float]]:
+        return {
+            cutoff: {
+                metric: 0.
+                for metric in self._str_metrics
+            }
+            for cutoff in self.cutoff_list
+        }
+
+
