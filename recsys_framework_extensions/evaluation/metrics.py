@@ -1,7 +1,7 @@
 import numba as nb
 import numpy as np
 
-from Evaluation.metrics import dcg
+from Evaluation.metrics import dcg, _compute_diversity_gini, _compute_diversity_herfindahl, _compute_shannon_entropy
 
 
 def average_precision(is_relevant: np.ndarray) -> float:
@@ -123,6 +123,26 @@ def f1_score_micro_averaged(
     return (2 * score_precision * score_recall) / (score_precision + score_recall)
 
 
+def shannon_entropy(
+    recommended_counter: np.ndarray,
+) -> float:
+    # Ignore from the computation both ignored items and items with zero occurrence.
+    # Zero occurrence items will have zero probability and will not change the result, butt will generate nans if
+    # used in the log
+    recommended_counter_mask = np.ones_like(recommended_counter, dtype=np.bool_)
+    recommended_counter_mask[recommended_counter == 0] = False
+
+    recommended_counter = recommended_counter[recommended_counter_mask]
+
+    n_recommendations = recommended_counter.sum()
+
+    recommended_probability = recommended_counter/n_recommendations
+
+    shannon_entropy = -np.sum(recommended_probability * np.log2(recommended_probability))
+
+    return shannon_entropy
+
+
 nb_average_precision = nb.njit(average_precision)
 nb_precision = nb.njit(precision)
 nb_recall = nb.njit(recall)
@@ -132,12 +152,17 @@ nb_rr = nb.njit(rr)
 nb_hit_rate = nb.njit(hit_rate)
 nb_arhr_all_hits = nb.njit(arhr_all_hits)
 nb_f1_score = nb.njit(f1_score_micro_averaged)
+nb_diversity_gini = nb.njit(_compute_diversity_gini)
+nb_diversity_herfindahl = nb.njit(_compute_diversity_herfindahl)
+nb_shannon_entropy = nb.njit(shannon_entropy)
+
 
 _ranked_list = np.asarray([3, 2, 1], dtype=np.int32)
 _is_relevant = np.asarray([False, False, True], dtype=np.bool_)
 _pos_items = np.asarray([1], dtype=np.int32)
 _relevance = np.asarray([1.], dtype=np.float32)
 _scores = np.asarray([1.], dtype=np.float32)
+_counter_recommended_items = np.array([1, 2, 3, 4, 5], dtype=np.int32)
 
 
 nb_average_precision(is_relevant=_is_relevant)
@@ -149,6 +174,15 @@ nb_rr(is_relevant=_is_relevant)
 nb_f1_score(
     score_precision=nb_precision(is_relevant=_is_relevant),
     score_recall=nb_recall(is_relevant=_is_relevant, pos_items=_pos_items),
+)
+nb_diversity_gini(
+    recommended_counter=_counter_recommended_items,
+)
+nb_diversity_herfindahl(
+    recommended_counter=_counter_recommended_items,
+)
+nb_shannon_entropy(
+    recommended_counter=_counter_recommended_items,
 )
 
 assert np.allclose(
@@ -189,8 +223,29 @@ assert np.allclose(
         score_recall=nb_recall(is_relevant=_is_relevant, pos_items=_pos_items),
     ),
 )
-
-
-
+assert np.allclose(
+    nb_diversity_gini(
+        recommended_counter=_counter_recommended_items,
+    ),
+    _compute_diversity_gini(
+        recommended_counter=_counter_recommended_items,
+    ),
+)
+assert np.allclose(
+    nb_diversity_herfindahl(
+        recommended_counter=_counter_recommended_items,
+    ),
+    _compute_diversity_herfindahl(
+        recommended_counter=_counter_recommended_items,
+    ),
+)
+assert np.allclose(
+    nb_shannon_entropy(
+        recommended_counter=_counter_recommended_items,
+    ),
+    _compute_shannon_entropy(
+        recommended_counter=_counter_recommended_items,
+    ),
+)
 
 
