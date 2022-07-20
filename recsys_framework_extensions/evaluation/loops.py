@@ -7,11 +7,11 @@ import scipy.sparse as sp
 import recsys_framework_extensions.evaluation.metrics as metrics
 
 
-def _assert_ndarray(
+def _assert_recommendations_array(
     arr_urm_indptr: np.ndarray,
     arr_urm_indices: np.ndarray,
     arr_urm_data: np.ndarray,
-    arr_batch_recommended_items: np.ndarray,
+    arr_batch_recommended_items: Union[np.ndarray, list[np.ndarray]],
     arr_batch_user_ids: np.ndarray,
     num_users: int,
     max_cutoff: int,
@@ -20,24 +20,12 @@ def _assert_ndarray(
     assert arr_urm_data.shape == arr_urm_indices.shape
 
     num_batch_users = arr_batch_user_ids.shape[0]
-    assert (num_batch_users, max_cutoff) == arr_batch_recommended_items.shape
-    assert arr_batch_user_ids.shape[0] == arr_batch_recommended_items.shape[0]
-
-
-def _assert_list_ndarray(
-    arr_urm_indptr: np.ndarray,
-    arr_urm_indices: np.ndarray,
-    arr_urm_data: np.ndarray,
-    arr_batch_recommended_items: list[np.ndarray],
-    arr_batch_user_ids: np.ndarray,
-    num_users: int,
-) -> None:
-    assert num_users <= arr_urm_indptr.shape[0]
-    assert arr_urm_data.shape == arr_urm_indices.shape
-
-    num_batch_users = arr_batch_user_ids.shape[0]
-    assert num_batch_users == len(arr_batch_recommended_items)
-    assert arr_batch_user_ids.shape[0] == len(arr_batch_recommended_items)
+    if isinstance(arr_batch_recommended_items, np.ndarray):
+        assert (num_batch_users, max_cutoff) == arr_batch_recommended_items.shape
+        assert arr_batch_user_ids.shape[0] == arr_batch_recommended_items.shape[0]
+    else:
+        assert num_batch_users == len(arr_batch_recommended_items)
+        assert arr_batch_user_ids.shape[0] == len(arr_batch_recommended_items)
 
 
 def _convert_to_nb_list_of_arrays(
@@ -66,15 +54,15 @@ def _get_arr_batch_recommendations(
         )
 
 
-@nb.njit
+# @nb.njit
 def _nb_loop_evaluate_users(
     arr_urm_indptr: np.ndarray,
     arr_urm_indices: np.ndarray,
     arr_urm_data: np.ndarray,
     arr_batch_user_ids: np.ndarray,
-    arr_batch_recommended_items: np.ndarray,
-    arr_count_recommended_items: np.ndarray,
+    arr_batch_recommended_items: Union[np.ndarray, list[np.ndarray]],
     cutoff: int,
+    num_items: int,
 ) -> tuple[np.ndarray, ...]:
 
     arr_cutoff_average_precision = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
@@ -85,6 +73,7 @@ def _nb_loop_evaluate_users(
     arr_cutoff_hit_rate = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_arhr_all_hits = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_f1_score = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
+    arr_count_recommended_items = np.zeros(shape=(num_items, ), dtype=np.int32)
 
     # for idx_batch_user_id, test_user_id in enumerate(arr_batch_user_ids):
     for idx_batch_user_id, tuple_user_recommendations in enumerate(
@@ -147,7 +136,8 @@ def _nb_loop_evaluate_users(
             score_recall=arr_cutoff_recall[idx_batch_user_id],
         )
 
-        for item_id in user_recommended_items:
+        for item_idx in range(cutoff):
+            item_id = user_recommended_items[item_idx]
             arr_count_recommended_items[item_id] += 1
 
     return (
@@ -164,13 +154,13 @@ def _nb_loop_evaluate_users(
 
 
 _nb_loop_evaluate_users(
-    arr_urm_indptr=np.array([0, 1], dtype=np.int32),
-    arr_urm_indices=np.array([2, 2], dtype=np.int32),
+    arr_urm_indptr=np.array([0, 1, 2], dtype=np.int32),
+    arr_urm_indices=np.array([1, 1], dtype=np.int32),
     arr_urm_data=np.array([1, 1], dtype=np.int32),
-    arr_batch_recommended_items=np.array([[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]], dtype=np.int32),
+    arr_batch_recommended_items=np.array([[2, 1, 3, 4, 5], [2, 5, 8, 9, 1]], dtype=np.int32),
     arr_batch_user_ids=np.array([0, 1], dtype=np.int32),
-    arr_count_recommended_items=np.array([0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int32),
     cutoff=2,
+    num_items=10,
 )
 
 
@@ -178,15 +168,11 @@ def evaluate_loop(
     urm_test: sp.csr_matrix,
     list_batch_recommended_items: list[list[int]],
     arr_batch_user_ids: np.ndarray,
-    arr_count_recommended_items: np.ndarray,
     num_users: int,
+    num_items: int,
     max_cutoff: int,
     cutoff: int,
 ) -> tuple[np.ndarray, ...]:
-    arr_batch_recommended_items = _get_arr_batch_recommendations(
-        list_batch_recommended_items=list_batch_recommended_items,
-    )
-
     arr_urm_indptr = cast(
         np.ndarray,
         urm_test.indptr,
@@ -199,26 +185,19 @@ def evaluate_loop(
         np.ndarray,
         urm_test.data,
     )
+    arr_batch_recommended_items = _get_arr_batch_recommendations(
+        list_batch_recommended_items=list_batch_recommended_items,
+    )
 
-    if isinstance(arr_batch_recommended_items, np.ndarray):
-        _assert_ndarray(
-            arr_urm_indptr=arr_urm_indptr,
-            arr_urm_indices=arr_urm_indices,
-            arr_urm_data=arr_urm_data,
-            arr_batch_recommended_items=arr_batch_recommended_items,
-            arr_batch_user_ids=arr_batch_user_ids,
-            num_users=num_users,
-            max_cutoff=max_cutoff,
-        )
-    else:
-        _assert_list_ndarray(
-            arr_urm_indptr=arr_urm_indptr,
-            arr_urm_indices=arr_urm_indices,
-            arr_urm_data=arr_urm_data,
-            arr_batch_recommended_items=arr_batch_recommended_items,
-            arr_batch_user_ids=arr_batch_user_ids,
-            num_users=num_users,
-        )
+    _assert_recommendations_array(
+        arr_urm_indptr=arr_urm_indptr,
+        arr_urm_indices=arr_urm_indices,
+        arr_urm_data=arr_urm_data,
+        arr_batch_recommended_items=arr_batch_recommended_items,
+        arr_batch_user_ids=arr_batch_user_ids,
+        num_users=num_users,
+        max_cutoff=max_cutoff,
+    )
 
     return _nb_loop_evaluate_users(
         arr_urm_indptr=arr_urm_indptr,
@@ -226,8 +205,8 @@ def evaluate_loop(
         arr_urm_data=arr_urm_data,
         arr_batch_recommended_items=arr_batch_recommended_items,
         arr_batch_user_ids=arr_batch_user_ids,
-        arr_count_recommended_items=arr_count_recommended_items,
         cutoff=cutoff,
+        num_items=num_items,
     )
 
 

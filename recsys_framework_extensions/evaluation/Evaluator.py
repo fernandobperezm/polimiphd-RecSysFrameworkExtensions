@@ -269,8 +269,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                     urm_test=self.URM_test,
                     list_batch_recommended_items=list_batch_recommended_items,
                     arr_batch_user_ids=arr_batch_user_id,
-                    arr_count_recommended_items=dict_cutoff_recommended_item_counters[str(cutoff)],
                     num_users=num_users,
+                    num_items=num_items,
                     max_cutoff=self.max_cutoff,
                     cutoff=cutoff,
                 )
@@ -290,7 +290,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_HERFINDAHL.value)] = 0.
                 df_results[(str(cutoff), EvaluatorMetrics.SHANNON_ENTROPY.value)] = 0.
 
-                dict_cutoff_recommended_item_counters[str(cutoff)] = arr_count_recommended_items
+                dict_cutoff_recommended_item_counters[str(cutoff)] += arr_count_recommended_items
 
             if self.ignore_items_flag:
                 recommender.reset_items_to_ignore()
