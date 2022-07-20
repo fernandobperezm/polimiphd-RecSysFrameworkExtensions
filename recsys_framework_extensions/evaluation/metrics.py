@@ -96,6 +96,24 @@ def hit_rate(is_relevant: np.ndarray) -> bool:
     return np.any(is_relevant)
 
 
+def coverage_user(is_relevant: np.ndarray) -> bool:
+    return is_relevant.size > 0
+
+
+def coverage_user_hit(is_relevant: np.ndarray) -> bool:
+    return np.any(is_relevant)
+
+
+def coverage_user_mean(
+    arr_user_mask: np.ndarray,
+    arr_users_to_ignore: np.ndarray,
+    num_total_users: int,
+) -> float:
+    num_ignored_users = arr_users_to_ignore.shape[0]
+
+    return arr_user_mask.sum() / (num_total_users - num_ignored_users)
+
+
 def arhr_all_hits(is_relevant: np.ndarray) -> float:
     # average reciprocal hit-rank (ARHR) of all relevant items
     # As opposed to MRR, ARHR takes into account all relevant items and not just the first
@@ -231,6 +249,8 @@ nb_rr = nb.njit(rr)
 nb_hit_rate = nb.njit(hit_rate)
 nb_arhr_all_hits = nb.njit(arhr_all_hits)
 nb_f1_score = nb.njit(f1_score_micro_averaged)
+nb_coverage_user = nb.njit(coverage_user)
+nb_coverage_user_hit = nb.njit(coverage_user_hit)
 nb_novelty = nb.njit(novelty)
 nb_diversity_gini = nb.njit(_compute_diversity_gini)
 nb_diversity_herfindahl = nb.njit(_compute_diversity_herfindahl)

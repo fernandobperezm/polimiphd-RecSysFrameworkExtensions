@@ -19,9 +19,9 @@ fake = Faker()
 
 rng = np.random.default_rng(seed=seed)
 
-NUM_USERS = 1000
+NUM_USERS = 100
 NUM_ITEMS = 700
-NUM_INTERACTIONS = 1000
+NUM_INTERACTIONS = 10_000
 
 ALL_USER_IDS = np.arange(start=0, stop=NUM_USERS, step=1, dtype=np.int32)
 ALL_ITEM_IDS = np.arange(start=0, stop=NUM_ITEMS, step=1, dtype=np.int32)
@@ -100,26 +100,76 @@ def urm(df: pd.DataFrame) -> sp.csr_matrix:
 
 @fixture
 def splits(urm: sp.csr_matrix) -> tuple[sp.csr_matrix, ...]:
-    train: sp.csr_matrix
-    validation: sp.csr_matrix
-    train_validation: sp.csr_matrix
-    test: sp.csr_matrix
+    urm_coo = urm.tocoo()
+    num_data_points = urm_coo.nnz
 
-    train_validation, test = train_test_split(
-        urm,
+    data_indices = np.arange(num_data_points)
+
+    data_indices_train_validation, data_indices_test = train_test_split(
+        data_indices,
         test_size=0.2,
         random_state=1234,
         shuffle=True,
     )
 
-    train, validation = train_test_split(
-        train_validation,
+    data_indices_train, data_indices_validation = train_test_split(
+        data_indices_train_validation,
         test_size=0.2,
         random_state=1234,
         shuffle=True,
     )
 
-    return train, validation, train_validation, test
+    urm_train = sp.csr_matrix(
+        (
+            urm_coo.data[data_indices_train],
+            (
+                urm_coo.row[data_indices_train],
+                urm_coo.col[data_indices_train],
+            )
+        ),
+        shape=urm.shape,
+        dtype=np.int32,
+    )
+    urm_validation = sp.csr_matrix(
+        (
+            urm_coo.data[data_indices_validation],
+            (
+                urm_coo.row[data_indices_validation],
+                urm_coo.col[data_indices_validation],
+            )
+        ),
+        shape=urm.shape,
+        dtype=np.int32,
+    )
+    urm_train_validation = sp.csr_matrix(
+        (
+            urm_coo.data[data_indices_train_validation],
+            (
+                urm_coo.row[data_indices_train_validation],
+                urm_coo.col[data_indices_train_validation],
+            )
+        ),
+        shape=urm.shape,
+        dtype=np.int32,
+    )
+    urm_test = sp.csr_matrix(
+        (
+            urm_coo.data[data_indices_test],
+            (
+                urm_coo.row[data_indices_test],
+                urm_coo.col[data_indices_test],
+            )
+        ),
+        shape=urm.shape,
+        dtype=np.int32,
+    )
+
+    return (
+        urm_train,
+        urm_validation,
+        urm_train_validation,
+        urm_test,
+    )
 
 
 @fixture

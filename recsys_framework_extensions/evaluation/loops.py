@@ -2,7 +2,6 @@ from typing import Union, cast
 
 import numpy as np
 import numba as nb
-import pandas as pd
 import scipy.sparse as sp
 
 import recsys_framework_extensions.evaluation.metrics as metrics
@@ -78,6 +77,8 @@ def _nb_loop_evaluate_users(
     arr_cutoff_arhr_all_hits = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_f1_score = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_novelty_score = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
+    arr_cutoff_coverage_users = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
+    arr_cutoff_coverage_users_hit = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_count_recommended_items = np.zeros(shape=(num_items, ), dtype=np.int32)
 
     # for idx_batch_user_id, test_user_id in enumerate(arr_batch_user_ids):
@@ -148,6 +149,14 @@ def _nb_loop_evaluate_users(
             num_interactions=num_interactions,
         )
 
+        arr_cutoff_coverage_users[idx_batch_user_id] = metrics.nb_coverage_user(
+            is_relevant=is_relevant_current_cutoff,
+        )
+
+        arr_cutoff_coverage_users_hit[idx_batch_user_id] = metrics.nb_coverage_user_hit(
+            is_relevant=is_relevant_current_cutoff,
+        )
+
         for item_id in recommended_items_current_cutoff:
             arr_count_recommended_items[item_id] += 1
 
@@ -161,6 +170,8 @@ def _nb_loop_evaluate_users(
         arr_cutoff_arhr_all_hits,
         arr_cutoff_f1_score,
         arr_cutoff_novelty_score,
+        arr_cutoff_coverage_users,
+        arr_cutoff_coverage_users_hit,
         arr_count_recommended_items,
     )
 
