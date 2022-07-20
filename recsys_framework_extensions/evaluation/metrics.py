@@ -1,7 +1,10 @@
 import numba as nb
 import numpy as np
+import scipy.sparse as sp
 
 from Evaluation.metrics import dcg, _compute_diversity_gini, _compute_diversity_herfindahl, _compute_shannon_entropy
+
+from recsys_framework_extensions.sparse.utils import compute_item_popularity_from_urm
 
 
 def average_precision(is_relevant: np.ndarray) -> float:
@@ -117,10 +120,79 @@ def f1_score_micro_averaged(
     score_precision: float,
     score_recall: float,
 ) -> float:
-    if score_precision + score_recall == 0:
+    if 0. == score_precision + score_recall:
         return 0.
 
     return (2 * score_precision * score_recall) / (score_precision + score_recall)
+
+
+def novelty(
+    recommended_items_ids: np.ndarray,
+    item_popularity: np.ndarray,
+    num_items: int,
+    num_interactions: int,
+) -> float:
+    if recommended_items_ids.size <= 0:
+        return 0.
+
+    recommended_items_popularity = item_popularity[recommended_items_ids]
+
+    probability = recommended_items_popularity / num_interactions
+    probability = probability[probability != 0]
+
+    return np.sum(
+        -np.log2(probability) / num_items
+    )
+
+
+@nb.njit
+def _nb_novelty_train(
+    num_users: int,
+    num_items: int,
+    num_interactions: int,
+    arr_train_item_popularity: np.ndarray,
+    arr_urm_indices: np.ndarray,
+    arr_urm_indptr: np.ndarray,
+) -> float:
+    novelty_score = 0.
+
+    for user_id in range(num_users):
+        user_profile_start = arr_urm_indptr[user_id]
+        user_profile_end = arr_urm_indptr[user_id + 1]
+
+        arr_user_relevant_items = np.asarray(
+            arr_urm_indices[user_profile_start:user_profile_end],
+            dtype=np.int32,
+        )
+
+        novelty_score += nb_novelty(
+            recommended_items_ids=arr_user_relevant_items,
+            item_popularity=arr_train_item_popularity,
+            num_items=num_items,
+            num_interactions=num_interactions,
+        )
+
+    return novelty_score / num_users
+
+
+def novelty_train(
+    urm_train: sp.csr_matrix,
+) -> float:
+    num_users, num_items = urm_train.shape
+    num_interactions = urm_train.nnz
+
+    arr_train_item_popularity = compute_item_popularity_from_urm(
+        urm=urm_train,
+    )
+
+    return _nb_novelty_train(
+        num_users=num_users,
+        num_items=num_items,
+        num_interactions=num_interactions,
+        arr_train_item_popularity=arr_train_item_popularity,
+        arr_urm_indices=urm_train.indices,
+        arr_urm_indptr=urm_train.indptr,
+    )
 
 
 def shannon_entropy(
@@ -159,6 +231,7 @@ nb_rr = nb.njit(rr)
 nb_hit_rate = nb.njit(hit_rate)
 nb_arhr_all_hits = nb.njit(arhr_all_hits)
 nb_f1_score = nb.njit(f1_score_micro_averaged)
+nb_novelty = nb.njit(novelty)
 nb_diversity_gini = nb.njit(_compute_diversity_gini)
 nb_diversity_herfindahl = nb.njit(_compute_diversity_herfindahl)
 nb_shannon_entropy = nb.njit(shannon_entropy)

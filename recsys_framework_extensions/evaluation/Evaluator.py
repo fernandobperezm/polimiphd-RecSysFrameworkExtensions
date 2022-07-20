@@ -11,6 +11,7 @@ from Evaluation.Evaluator import EvaluatorHoldout, EvaluatorMetrics, get_result_
 from Recommenders.BaseRecommender import BaseRecommender
 from recsys_framework_extensions.data.mixins import ParquetDataMixin, NumpyDictDataMixin
 from recsys_framework_extensions.evaluation.loops import evaluate_loop, count_recommended_items_loop
+import recsys_framework_extensions.evaluation.metrics as metrics
 from recsys_framework_extensions.logging import get_logger
 from tqdm import tqdm
 
@@ -67,6 +68,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             EvaluatorMetrics.HIT_RATE,
             EvaluatorMetrics.ARHR,
             EvaluatorMetrics.F1,
+            EvaluatorMetrics.NOVELTY,
+            EvaluatorMetrics.RATIO_NOVELTY,
             EvaluatorMetrics.DIVERSITY_GINI,
             EvaluatorMetrics.RATIO_DIVERSITY_GINI,
             EvaluatorMetrics.DIVERSITY_HERFINDAHL,
@@ -91,25 +94,26 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         if num_users_evaluated <= 0:
             raise ValueError("TODO: fernando-debugger complete")
 
+        novelty_scores_train = metrics.novelty_train(
+            urm_train=self.urm_train,
+        )
+
         df_mean_scores = df_scores.describe()
 
         for cutoff, metric in df_scores.columns:
             # The for-loop is to correct the value of the F1 metric.
             # The original framework computes the F1 only on the mean precision and recall.
-            if EvaluatorMetrics.F1.value != metric:
-                continue
-
-            mean_precision = df_mean_scores[(cutoff, EvaluatorMetrics.PRECISION.value)]["mean"]
-            mean_recall = df_mean_scores[(cutoff, EvaluatorMetrics.RECALL.value)]["mean"]
-
-            df_mean_scores[(cutoff, EvaluatorMetrics.F1.value)]["mean"] = (
-                0.
-                if np.isclose(mean_precision + mean_recall, 0.)
-                else (
-                    (2 * mean_precision * mean_recall)
-                    / (mean_precision + mean_recall)
+            if EvaluatorMetrics.F1.value == metric:
+                df_mean_scores[(cutoff, EvaluatorMetrics.F1.value)]["mean"] = metrics.nb_f1_score(
+                    score_precision=df_mean_scores[(cutoff, EvaluatorMetrics.PRECISION.value)]["mean"],
+                    score_recall=df_mean_scores[(cutoff, EvaluatorMetrics.RECALL.value)]["mean"],
                 )
-            )
+
+            if EvaluatorMetrics.RATIO_NOVELTY.value == metric:
+                df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_NOVELTY.value)]["mean"] = metrics.nb_ratio_recommendation_vs_train(
+                    metric_train=novelty_scores_train,
+                    metric_recommendations=df_mean_scores[(cutoff, EvaluatorMetrics.NOVELTY.value)]["mean"],
+                )
 
         for cutoff in self._str_cutoffs:
             (
@@ -280,9 +284,11 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                     arr_cutoff_hit_rate,
                     arr_cutoff_arhr_all_hits,
                     arr_cutoff_f1_score,
+                    arr_cutoff_novelty_score,
                     arr_count_recommended_items,
                 ) = evaluate_loop(
                     urm_test=self.URM_test,
+                    urm_train=self.urm_train,
                     list_batch_recommended_items=list_batch_recommended_items,
                     arr_batch_user_ids=arr_batch_user_id,
                     num_users=num_users,
@@ -299,9 +305,12 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 df_results[(str(cutoff), EvaluatorMetrics.HIT_RATE.value)] = arr_cutoff_hit_rate
                 df_results[(str(cutoff), EvaluatorMetrics.ARHR.value)] = arr_cutoff_arhr_all_hits
                 df_results[(str(cutoff), EvaluatorMetrics.F1.value)] = arr_cutoff_f1_score
+                df_results[(str(cutoff), EvaluatorMetrics.NOVELTY.value)] = arr_cutoff_novelty_score
 
                 # Diversity metrics only make sense when computed on all users, here we're only using a placeholder
                 # value.
+                df_results[(str(cutoff), EvaluatorMetrics.RATIO_NOVELTY.value)] = 0.
+
                 df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_GINI.value)] = 0.
                 df_results[(str(cutoff), EvaluatorMetrics.RATIO_DIVERSITY_GINI.value)] = 0.
 

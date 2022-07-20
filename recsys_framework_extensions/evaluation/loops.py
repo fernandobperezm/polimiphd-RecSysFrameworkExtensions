@@ -2,9 +2,11 @@ from typing import Union, cast
 
 import numpy as np
 import numba as nb
+import pandas as pd
 import scipy.sparse as sp
 
 import recsys_framework_extensions.evaluation.metrics as metrics
+from recsys_framework_extensions.sparse.utils import compute_item_popularity_from_urm
 
 
 def _assert_recommendations_array(
@@ -54,15 +56,17 @@ def _get_arr_batch_recommendations(
         )
 
 
-# @nb.njit
+@nb.njit
 def _nb_loop_evaluate_users(
     arr_urm_indptr: np.ndarray,
     arr_urm_indices: np.ndarray,
     arr_urm_data: np.ndarray,
     arr_batch_user_ids: np.ndarray,
     arr_batch_recommended_items: Union[np.ndarray, list[np.ndarray]],
+    arr_train_item_popularity: np.ndarray,
     cutoff: int,
     num_items: int,
+    num_interactions: int,
 ) -> tuple[np.ndarray, ...]:
 
     arr_cutoff_average_precision = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
@@ -73,6 +77,7 @@ def _nb_loop_evaluate_users(
     arr_cutoff_hit_rate = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_arhr_all_hits = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_f1_score = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
+    arr_cutoff_novelty_score = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_count_recommended_items = np.zeros(shape=(num_items, ), dtype=np.int32)
 
     # for idx_batch_user_id, test_user_id in enumerate(arr_batch_user_ids):
@@ -136,8 +141,14 @@ def _nb_loop_evaluate_users(
             score_recall=arr_cutoff_recall[idx_batch_user_id],
         )
 
-        for item_idx in range(cutoff):
-            item_id = user_recommended_items[item_idx]
+        arr_cutoff_novelty_score[idx_batch_user_id] = metrics.nb_novelty(
+            recommended_items_ids=recommended_items_current_cutoff,
+            item_popularity=arr_train_item_popularity,
+            num_items=num_items,
+            num_interactions=num_interactions,
+        )
+
+        for item_id in recommended_items_current_cutoff:
             arr_count_recommended_items[item_id] += 1
 
     return (
@@ -149,6 +160,7 @@ def _nb_loop_evaluate_users(
         arr_cutoff_hit_rate,
         arr_cutoff_arhr_all_hits,
         arr_cutoff_f1_score,
+        arr_cutoff_novelty_score,
         arr_count_recommended_items,
     )
 
@@ -159,13 +171,16 @@ _nb_loop_evaluate_users(
     arr_urm_data=np.array([1, 1], dtype=np.int32),
     arr_batch_recommended_items=np.array([[2, 1, 3, 4, 5], [2, 5, 8, 9, 1]], dtype=np.int32),
     arr_batch_user_ids=np.array([0, 1], dtype=np.int32),
+    arr_train_item_popularity=np.array([0, 2, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int32),
     cutoff=2,
     num_items=10,
+    num_interactions=2,
 )
 
 
 def evaluate_loop(
     urm_test: sp.csr_matrix,
+    urm_train: sp.csr_matrix,
     list_batch_recommended_items: list[list[int]],
     arr_batch_user_ids: np.ndarray,
     num_users: int,
@@ -185,6 +200,11 @@ def evaluate_loop(
         np.ndarray,
         urm_test.data,
     )
+
+    arr_train_item_popularity = compute_item_popularity_from_urm(
+        urm=urm_train,
+    )
+
     arr_batch_recommended_items = _get_arr_batch_recommendations(
         list_batch_recommended_items=list_batch_recommended_items,
     )
@@ -205,8 +225,10 @@ def evaluate_loop(
         arr_urm_data=arr_urm_data,
         arr_batch_recommended_items=arr_batch_recommended_items,
         arr_batch_user_ids=arr_batch_user_ids,
+        arr_train_item_popularity=arr_train_item_popularity,
         cutoff=cutoff,
         num_items=num_items,
+        num_interactions=urm_train.nnz,
     )
 
 
@@ -248,7 +270,6 @@ def _nb_loop_count_recommended_items(
         recommended_counter=arr_count_valid_recommended_items,
     )
 
-    # Lastly, compute ratios.
     ratio_diversity_gini = metrics.nb_ratio_recommendation_vs_train(
         metric_train=diversity_gini_train,
         metric_recommendations=diversity_gini_recommendations,
