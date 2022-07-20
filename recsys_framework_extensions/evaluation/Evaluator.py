@@ -10,6 +10,7 @@ import scipy.sparse as sp
 from Evaluation.Evaluator import EvaluatorHoldout, EvaluatorMetrics, get_result_string_df
 from Recommenders.BaseRecommender import BaseRecommender
 from recsys_framework_extensions.data.mixins import ParquetDataMixin, NumpyDictDataMixin
+from recsys_framework_extensions.decorators import timeit
 from recsys_framework_extensions.evaluation.loops import evaluate_loop, count_recommended_items_loop
 import recsys_framework_extensions.evaluation.metrics as metrics
 from recsys_framework_extensions.logging import get_logger
@@ -152,6 +153,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
         return df_mean_scores
 
+    @timeit
     def evaluateRecommender(
         self,
         recommender_object: BaseRecommender,
@@ -226,8 +228,6 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         self,
         recommender: BaseRecommender,
     ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
-
-        print(self.urm_train.shape, self.URM_test.shape)
         assert self.urm_train.shape == self.URM_test.shape
 
         if self.ignore_items_flag:
