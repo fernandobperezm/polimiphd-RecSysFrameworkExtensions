@@ -122,3 +122,6 @@ ENV/
 # Backups
 **/bk/*
 
+# Poetry lock.
+poetry.lock
+
