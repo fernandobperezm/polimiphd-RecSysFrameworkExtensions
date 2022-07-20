@@ -30,6 +30,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
     def __init__(
         self,
         urm_test: sp.csr_matrix,
+        urm_train: sp.csr_matrix,
         cutoff_list: list[int],
         min_ratings_per_user: int = 1,
         exclude_seen: bool = True,
@@ -49,6 +50,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             ignore_users=ignore_users,
             verbose=verbose
         )
+        self.urm_train = urm_train
 
         self._cutoffs: list[int] = self.cutoff_list
         self._str_cutoffs = [
@@ -66,8 +68,11 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             EvaluatorMetrics.ARHR,
             EvaluatorMetrics.F1,
             EvaluatorMetrics.DIVERSITY_GINI,
+            EvaluatorMetrics.RATIO_DIVERSITY_GINI,
             EvaluatorMetrics.DIVERSITY_HERFINDAHL,
+            EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL,
             EvaluatorMetrics.SHANNON_ENTROPY,
+            EvaluatorMetrics.RATIO_SHANNON_ENTROPY,
         ]
         self._str_metrics: list[str] = [
             metric.value
@@ -109,16 +114,27 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         for cutoff in self._str_cutoffs:
             (
                 diversity_gini,
+                ratio_diversity_gini,
+
                 diversity_herfindahl,
-                shannon_entropy
+                ratio_diversity_herfindahl,
+
+                shannon_entropy,
+                ratio_shannon_entropy,
             ) = count_recommended_items_loop(
                 arr_count_recommended_items=dict_recommended_item_distribution[cutoff],
                 arr_item_ids_to_ignore=self.ignore_items_ID,
+                urm_train=self.urm_train,
             )
 
             df_mean_scores[(cutoff, EvaluatorMetrics.DIVERSITY_GINI.value)]["mean"] = diversity_gini
+            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_DIVERSITY_GINI.value)]["mean"] = ratio_diversity_gini
+
             df_mean_scores[(cutoff, EvaluatorMetrics.DIVERSITY_HERFINDAHL.value)]["mean"] = diversity_herfindahl
+            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL.value)]["mean"] = ratio_diversity_herfindahl
+
             df_mean_scores[(cutoff, EvaluatorMetrics.SHANNON_ENTROPY.value)]["mean"] = shannon_entropy
+            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_SHANNON_ENTROPY.value)]["mean"] = ratio_shannon_entropy
 
         return df_mean_scores
 
@@ -287,8 +303,13 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 # Diversity metrics only make sense when computed on all users, here we're only using a placeholder
                 # value.
                 df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_GINI.value)] = 0.
+                df_results[(str(cutoff), EvaluatorMetrics.RATIO_DIVERSITY_GINI.value)] = 0.
+
                 df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_HERFINDAHL.value)] = 0.
+                df_results[(str(cutoff), EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL.value)] = 0.
+
                 df_results[(str(cutoff), EvaluatorMetrics.SHANNON_ENTROPY.value)] = 0.
+                df_results[(str(cutoff), EvaluatorMetrics.RATIO_SHANNON_ENTROPY.value)] = 0.
 
                 dict_cutoff_recommended_item_counters[str(cutoff)] += arr_count_recommended_items
 

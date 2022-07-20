@@ -213,34 +213,71 @@ def evaluate_loop(
 @nb.njit
 def _nb_loop_count_recommended_items(
     arr_count_recommended_items: np.ndarray,
+    arr_count_train_items: np.ndarray,
     arr_item_ids_to_ignore: np.ndarray,
 ) -> tuple[float, ...]:
 
     arr_mask_valid_recommended_items = np.ones_like(arr_count_recommended_items, dtype=np.bool_)
     arr_mask_valid_recommended_items[arr_item_ids_to_ignore] = False
 
-    arr_count_valid_recommended_items = arr_count_recommended_items[arr_mask_valid_recommended_items]
+    arr_mask_valid_train_items = np.ones_like(arr_count_train_items, dtype=np.bool_)
+    arr_mask_valid_train_items[arr_item_ids_to_ignore] = False
 
-    diversity_gini = metrics.nb_diversity_gini(
+    arr_count_valid_recommended_items = arr_count_recommended_items[arr_mask_valid_recommended_items]
+    arr_count_valid_train_items = arr_count_train_items[arr_mask_valid_train_items]
+
+    # First compute on train data (for ratio)
+    diversity_gini_train = metrics.nb_diversity_gini(
+        recommended_counter=arr_count_valid_train_items,
+    )
+    diversity_herfindahl_train = metrics.nb_diversity_herfindahl(
+        recommended_counter=arr_count_valid_train_items,
+    )
+    shannon_entropy_train = metrics.nb_shannon_entropy(
+        recommended_counter=arr_count_valid_train_items,
+    )
+
+    # Then compute on recommendations (for normal and ratio metrics)
+    diversity_gini_recommendations = metrics.nb_diversity_gini(
         recommended_counter=arr_count_valid_recommended_items,
     )
-    diversity_herfindahl = metrics.nb_diversity_herfindahl(
+    diversity_herfindahl_recommendations = metrics.nb_diversity_herfindahl(
         recommended_counter=arr_count_valid_recommended_items,
     )
-    shannon_entropy = metrics.nb_shannon_entropy(
+    shannon_entropy_recommendations = metrics.nb_shannon_entropy(
         recommended_counter=arr_count_valid_recommended_items,
+    )
+
+    # Lastly, compute ratios.
+    ratio_diversity_gini = metrics.nb_ratio_recommendation_vs_train(
+        metric_train=diversity_gini_train,
+        metric_recommendations=diversity_gini_recommendations,
+    )
+    ratio_diversity_herfindahl = metrics.nb_ratio_recommendation_vs_train(
+        metric_train=diversity_herfindahl_train,
+        metric_recommendations=diversity_herfindahl_recommendations,
+    )
+    ratio_shannon_entropy = metrics.nb_ratio_recommendation_vs_train(
+        metric_train=shannon_entropy_train,
+        metric_recommendations=shannon_entropy_recommendations,
     )
 
     return (
-        diversity_gini,
-        diversity_herfindahl,
-        shannon_entropy
+        diversity_gini_recommendations,
+        ratio_diversity_gini,
+
+        diversity_herfindahl_recommendations,
+        ratio_diversity_herfindahl,
+
+        shannon_entropy_recommendations,
+        ratio_shannon_entropy,
     )
 
 
 def count_recommended_items_loop(
     arr_count_recommended_items: np.ndarray,
     arr_item_ids_to_ignore: np.ndarray,
+    urm_train: sp.csr_matrix,
 ) -> tuple[float, ...]:
     arr_count_recommended_items = np.asarray(
         arr_count_recommended_items, dtype=np.int32,
@@ -250,8 +287,16 @@ def count_recommended_items_loop(
         arr_item_ids_to_ignore, dtype=np.int32,
     )
 
+    arr_count_train_items = np.asarray(
+        np.ediff1d(
+            sp.csc_matrix(urm_train).indptr
+        ),
+        dtype=np.int32,
+    )
+
     return _nb_loop_count_recommended_items(
         arr_item_ids_to_ignore=arr_item_ids_to_ignore,
+        arr_count_train_items=arr_count_train_items,
         arr_count_recommended_items=arr_count_recommended_items,
     )
 

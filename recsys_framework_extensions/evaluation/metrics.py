@@ -143,6 +143,13 @@ def shannon_entropy(
     return shannon_entropy
 
 
+def ratio_recommendation_vs_train(
+    metric_train: float,
+    metric_recommendations: float,
+) -> float:
+    return metric_recommendations / metric_train
+
+
 nb_average_precision = nb.njit(average_precision)
 nb_precision = nb.njit(precision)
 nb_recall = nb.njit(recall)
@@ -155,7 +162,7 @@ nb_f1_score = nb.njit(f1_score_micro_averaged)
 nb_diversity_gini = nb.njit(_compute_diversity_gini)
 nb_diversity_herfindahl = nb.njit(_compute_diversity_herfindahl)
 nb_shannon_entropy = nb.njit(shannon_entropy)
-
+nb_ratio_recommendation_vs_train = nb.njit(ratio_recommendation_vs_train)
 
 _ranked_list = np.asarray([3, 2, 1], dtype=np.int32)
 _is_relevant = np.asarray([False, False, True], dtype=np.bool_)

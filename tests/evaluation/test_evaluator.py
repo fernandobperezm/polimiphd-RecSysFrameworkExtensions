@@ -5,8 +5,6 @@ import pandas as pd
 from Evaluation.Evaluator import EvaluatorHoldout as RecSysFrameworkEvaluatorHoldout
 from recsys_framework_extensions.evaluation.Evaluator import ExtendedEvaluatorHoldout as ExtendedEvaluatorHoldout
 
-import pytest
-
 
 class TestEvaluator:
     def test_evaluator_old_and_new_are_equivalent(
@@ -14,6 +12,7 @@ class TestEvaluator:
         splits: list[sparse.csr_matrix],
         recommender: BaseRecommender,
     ):
+        urm_train_validation = splits[2]
         urm_test = splits[-1]
 
         test_cutoffs = [1, 2, 3, 4, 5]
@@ -29,6 +28,7 @@ class TestEvaluator:
 
         new_evaluator = ExtendedEvaluatorHoldout(
             urm_test=urm_test.copy(),
+            urm_train=urm_train_validation.copy(),
             cutoff_list=test_cutoffs,
             min_ratings_per_user=test_min_ratings_per_user,
             exclude_seen=test_exclude_seen,
@@ -59,6 +59,7 @@ class TestEvaluator:
         splits: list[sparse.csr_matrix],
         recommender: BaseRecommender,
     ):
+        urm_train_validation = splits[2]
         urm_test = splits[-1]
 
         test_cutoffs = [1, 2, 3, 4, 5]
@@ -67,6 +68,7 @@ class TestEvaluator:
 
         new_evaluator = ExtendedEvaluatorHoldout(
             urm_test=urm_test.copy(),
+            urm_train=urm_train_validation.copy(),
             cutoff_list=test_cutoffs,
             min_ratings_per_user=test_min_ratings_per_user,
             exclude_seen=test_exclude_seen,
