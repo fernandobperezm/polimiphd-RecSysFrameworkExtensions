@@ -61,9 +61,9 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         ]
 
         self._metrics = [
-            EvaluatorMetrics.MAP,
             EvaluatorMetrics.PRECISION,
             EvaluatorMetrics.RECALL,
+            EvaluatorMetrics.MAP,
             EvaluatorMetrics.NDCG,
             EvaluatorMetrics.MRR,
             EvaluatorMetrics.HIT_RATE,
@@ -71,6 +71,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             EvaluatorMetrics.F1,
             EvaluatorMetrics.COVERAGE_USER,
             EvaluatorMetrics.COVERAGE_USER_HIT,
+            EvaluatorMetrics.COVERAGE_ITEM,
+            EvaluatorMetrics.COVERAGE_ITEM_HIT,
             EvaluatorMetrics.NOVELTY,
             EvaluatorMetrics.RATIO_NOVELTY,
             EvaluatorMetrics.DIVERSITY_GINI,
@@ -89,7 +91,11 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         self,
         recommender_object: BaseRecommender,
     ) -> pd.DataFrame:
-        df_scores, dict_recommended_item_distribution = self._evaluate_recommender(
+        (
+            df_scores,
+            dict_recommended_item_distribution,
+            dict_relevant_recommended_item_distribution,
+        ) = self._evaluate_recommender(
             recommender=recommender_object
         )
 
@@ -105,6 +111,9 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
         for cutoff in self._str_cutoffs:
             (
+                coverage_item,
+                coverage_item_hit,
+
                 diversity_gini,
                 ratio_diversity_gini,
 
@@ -115,9 +124,13 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 ratio_shannon_entropy,
             ) = count_recommended_items_loop(
                 arr_count_recommended_items=dict_recommended_item_distribution[cutoff],
+                arr_count_relevant_recommended_items=dict_relevant_recommended_item_distribution[cutoff],
                 arr_item_ids_to_ignore=self.ignore_items_ID,
                 urm_train=self.urm_train,
             )
+
+            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_ITEM.value)]["mean"] = coverage_item
+            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_ITEM_HIT.value)]["mean"] = coverage_item_hit
 
             df_mean_scores[(cutoff, EvaluatorMetrics.DIVERSITY_GINI.value)]["mean"] = diversity_gini
             df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_DIVERSITY_GINI.value)]["mean"] = ratio_diversity_gini
@@ -185,17 +198,21 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         recommender: BaseRecommender,
         recommender_name: str,
         folder_export_results: str,
-    ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
+    ) -> tuple[pd.DataFrame, dict[str, np.ndarray], dict[str, np.ndarray]]:
         file_path_results_dataframe = os.path.join(
             folder_export_results, f"{recommender_name}_accuracy.parquet"
         )
         file_path_results_recommended_item_distribution = os.path.join(
             folder_export_results, f"{recommender_name}_recommended_item_distribution.npz"
         )
+        file_path_results_relevant_recommended_item_distribution = os.path.join(
+            folder_export_results, f"{recommender_name}_relevant_recommended_item_distribution.npz"
+        )
 
         if all(os.path.exists(f) for f in [
             file_path_results_dataframe,
             file_path_results_recommended_item_distribution,
+            file_path_results_relevant_recommended_item_distribution,
         ]):
             # If files exists, just load them from disk.
             df_results = self.load_parquet(
@@ -208,9 +225,18 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 to_dict_func=lambda: {"a": np.array([])},
             )
 
+            dict_relevant_recommended_item_distribution = self.load_dict_from_numpy(
+                file_path=file_path_results_relevant_recommended_item_distribution,
+                to_dict_func=lambda: {"a": np.array([])},
+            )
+
         else:
             # Compute them and save them to disk.
-            df_results, dict_recommended_item_distribution = self._evaluate_recommender(
+            (
+                df_results,
+                dict_recommended_item_distribution,
+                dict_relevant_recommended_item_distribution
+            ) = self._evaluate_recommender(
                 recommender=recommender,
             )
             _ = self.load_parquet(
@@ -221,13 +247,17 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 file_path=file_path_results_recommended_item_distribution,
                 to_dict_func=lambda: dict_recommended_item_distribution,
             )
+            _ = self.load_dict_from_numpy(
+                file_path=file_path_results_relevant_recommended_item_distribution,
+                to_dict_func=lambda: dict_relevant_recommended_item_distribution,
+            )
 
-        return df_results, dict_recommended_item_distribution
+        return df_results, dict_recommended_item_distribution, dict_relevant_recommended_item_distribution
 
     def _evaluate_recommender(
         self,
         recommender: BaseRecommender,
-    ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
+    ) -> tuple[pd.DataFrame, dict[str, np.ndarray], dict[str, np.ndarray]]:
         assert self.urm_train.shape == self.URM_test.shape
 
         if self.ignore_items_flag:
@@ -254,6 +284,10 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         )
 
         dict_cutoff_recommended_item_counters: dict[str, np.ndarray] = {
+            cutoff: np.zeros(shape=(num_items,), dtype=np.int32)
+            for cutoff in self._str_cutoffs
+        }
+        dict_cutoff_relevant_recommended_item_counters: dict[str, np.ndarray] = {
             cutoff: np.zeros(shape=(num_items,), dtype=np.int32)
             for cutoff in self._str_cutoffs
         }
@@ -297,6 +331,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                     arr_cutoff_coverage_users,
                     arr_cutoff_coverage_users_hit,
                     arr_count_recommended_items,
+                    arr_count_relevant_recommended_items,
                 ) = evaluate_loop(
                     urm_test=self.URM_test,
                     urm_train=self.urm_train,
@@ -306,7 +341,6 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                     num_items=num_items,
                     cutoff=cutoff,
                     max_cutoff=self.max_cutoff,
-
                 )
 
                 df_results[(str(cutoff), EvaluatorMetrics.MAP.value)] = arr_cutoff_average_precision
@@ -323,6 +357,9 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
                 # Diversity metrics only make sense when computed on all users, here we're only using a placeholder
                 # value.
+                df_results[(str(cutoff), EvaluatorMetrics.COVERAGE_ITEM.value)] = 0.
+                df_results[(str(cutoff), EvaluatorMetrics.COVERAGE_ITEM_HIT.value)] = 0.
+
                 df_results[(str(cutoff), EvaluatorMetrics.RATIO_NOVELTY.value)] = 0.
 
                 df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_GINI.value)] = 0.
@@ -335,6 +372,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 df_results[(str(cutoff), EvaluatorMetrics.RATIO_SHANNON_ENTROPY.value)] = 0.
 
                 dict_cutoff_recommended_item_counters[str(cutoff)] += arr_count_recommended_items
+                dict_cutoff_relevant_recommended_item_counters[str(cutoff)] += arr_count_relevant_recommended_items
 
             if self.ignore_items_flag:
                 recommender.reset_items_to_ignore()
@@ -346,7 +384,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             axis="index",
         )
 
-        return df_results, dict_cutoff_recommended_item_counters
+        return df_results, dict_cutoff_recommended_item_counters, dict_cutoff_relevant_recommended_item_counters
 
     def compute_recommenders_statistical_tests(
         self,
@@ -389,7 +427,11 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         recommender_others_names: Sequence[str],
         recommender_others_folders: Sequence[str],
     ) -> list[pd.DataFrame]:
-        df_scores_baseline, _ = self.evaluate_recommender(
+        (
+            df_scores_baseline,
+            _,
+            _,
+        ) = self.evaluate_recommender(
             recommender=recommender_baseline,
             recommender_name=recommender_baseline_name,
             folder_export_results=recommender_baseline_folder,
@@ -589,7 +631,11 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         recommender_name: str,
         folder_export_results: str,
     ) -> pd.DataFrame:
-        df_scores, _ = self.evaluate_recommender(
+        (
+            df_scores,
+            _,
+            _,
+        ) = self.evaluate_recommender(
             recommender=recommender,
             recommender_name=recommender_name,
             folder_export_results=folder_export_results,

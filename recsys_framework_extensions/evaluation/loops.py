@@ -80,6 +80,7 @@ def _nb_loop_evaluate_users(
     arr_cutoff_coverage_users = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_coverage_users_hit = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_count_recommended_items = np.zeros(shape=(num_items, ), dtype=np.int32)
+    arr_count_relevant_recommended_items = np.zeros(shape=(num_items, ), dtype=np.int32)
 
     # for idx_batch_user_id, test_user_id in enumerate(arr_batch_user_ids):
     for idx_batch_user_id, tuple_user_recommendations in enumerate(
@@ -157,8 +158,12 @@ def _nb_loop_evaluate_users(
             is_relevant=is_relevant_current_cutoff,
         )
 
-        for item_id in recommended_items_current_cutoff:
-            arr_count_recommended_items[item_id] += 1
+        arr_count_recommended_items[
+            recommended_items_current_cutoff
+        ] += 1
+        arr_count_relevant_recommended_items[
+            recommended_items_current_cutoff[is_relevant_current_cutoff]
+        ] += 1
 
     return (
         arr_cutoff_average_precision,
@@ -173,6 +178,7 @@ def _nb_loop_evaluate_users(
         arr_cutoff_coverage_users,
         arr_cutoff_coverage_users_hit,
         arr_count_recommended_items,
+        arr_count_relevant_recommended_items,
     )
 
 
@@ -246,6 +252,7 @@ def evaluate_loop(
 @nb.njit
 def _nb_loop_count_recommended_items(
     arr_count_recommended_items: np.ndarray,
+    arr_count_relevant_recommended_items: np.ndarray,
     arr_count_train_items: np.ndarray,
     arr_item_ids_to_ignore: np.ndarray,
 ) -> tuple[float, ...]:
@@ -253,11 +260,23 @@ def _nb_loop_count_recommended_items(
     arr_mask_valid_recommended_items = np.ones_like(arr_count_recommended_items, dtype=np.bool_)
     arr_mask_valid_recommended_items[arr_item_ids_to_ignore] = False
 
+    arr_mask_valid_relevant_recommended_items = np.ones_like(arr_count_relevant_recommended_items, dtype=np.bool_)
+    arr_mask_valid_relevant_recommended_items[arr_item_ids_to_ignore] = False
+
     arr_mask_valid_train_items = np.ones_like(arr_count_train_items, dtype=np.bool_)
     arr_mask_valid_train_items[arr_item_ids_to_ignore] = False
 
     arr_count_valid_recommended_items = arr_count_recommended_items[arr_mask_valid_recommended_items]
+    arr_count_valid_relevant_recommended_items = arr_count_relevant_recommended_items[arr_mask_valid_relevant_recommended_items]
     arr_count_valid_train_items = arr_count_train_items[arr_mask_valid_train_items]
+
+    # First compute item coverages.
+    coverage_item = metrics.nb_coverage_item(
+        recommended_counter=arr_count_valid_recommended_items,
+    )
+    coverage_item_hit = metrics.nb_coverage_item(
+        recommended_counter=arr_count_valid_relevant_recommended_items,
+    )
 
     # First compute on train data (for ratio)
     diversity_gini_train = metrics.nb_diversity_gini(
@@ -295,6 +314,9 @@ def _nb_loop_count_recommended_items(
     )
 
     return (
+        coverage_item,
+        coverage_item_hit,
+
         diversity_gini_recommendations,
         ratio_diversity_gini,
 
@@ -308,17 +330,19 @@ def _nb_loop_count_recommended_items(
 
 def count_recommended_items_loop(
     arr_count_recommended_items: np.ndarray,
+    arr_count_relevant_recommended_items: np.ndarray,
     arr_item_ids_to_ignore: np.ndarray,
     urm_train: sp.csr_matrix,
 ) -> tuple[float, ...]:
     arr_count_recommended_items = np.asarray(
         arr_count_recommended_items, dtype=np.int32,
     )
-
+    arr_count_relevant_recommended_items = np.asarray(
+        arr_count_relevant_recommended_items, dtype=np.int32,
+    )
     arr_item_ids_to_ignore = np.asarray(
         arr_item_ids_to_ignore, dtype=np.int32,
     )
-
     arr_count_train_items = np.asarray(
         np.ediff1d(
             sp.csc_matrix(urm_train).indptr
@@ -330,6 +354,7 @@ def count_recommended_items_loop(
         arr_item_ids_to_ignore=arr_item_ids_to_ignore,
         arr_count_train_items=arr_count_train_items,
         arr_count_recommended_items=arr_count_recommended_items,
+        arr_count_relevant_recommended_items=arr_count_relevant_recommended_items,
     )
 
 

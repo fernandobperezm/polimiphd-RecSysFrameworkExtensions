@@ -4,6 +4,11 @@ import pandas as pd
 
 from Evaluation.Evaluator import EvaluatorHoldout as RecSysFrameworkEvaluatorHoldout
 from recsys_framework_extensions.evaluation.Evaluator import ExtendedEvaluatorHoldout as ExtendedEvaluatorHoldout
+from recsys_framework_extensions.logging import get_logger
+
+logger = get_logger(
+    logger_name=__file__,
+)
 
 
 class TestEvaluator:
@@ -50,6 +55,9 @@ class TestEvaluator:
                 df_results_new[col],
                 check_exact=False,
                 check_dtype=False,
+            )
+            logger.debug(
+                f"Successfully validated the metric '{col}'"
             )
 
     import pytest

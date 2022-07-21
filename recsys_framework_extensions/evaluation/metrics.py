@@ -96,6 +96,11 @@ def hit_rate(is_relevant: np.ndarray) -> bool:
     return np.any(is_relevant)
 
 
+def coverage_item(recommended_counter: np.ndarray) -> float:
+    recommended_mask = recommended_counter > 0
+    return recommended_mask.sum() / recommended_counter.shape[0]
+
+
 def coverage_user(is_relevant: np.ndarray) -> bool:
     return is_relevant.size > 0
 
@@ -249,6 +254,7 @@ nb_rr = nb.njit(rr)
 nb_hit_rate = nb.njit(hit_rate)
 nb_arhr_all_hits = nb.njit(arhr_all_hits)
 nb_f1_score = nb.njit(f1_score_micro_averaged)
+nb_coverage_item = nb.njit(coverage_item)
 nb_coverage_user = nb.njit(coverage_user)
 nb_coverage_user_hit = nb.njit(coverage_user_hit)
 nb_novelty = nb.njit(novelty)
