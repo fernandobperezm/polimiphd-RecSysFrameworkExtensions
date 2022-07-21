@@ -4,7 +4,7 @@ import numpy as np
 import numba as nb
 import scipy.sparse as sp
 
-import recsys_framework_extensions.evaluation.metrics as metrics
+import recsys_framework_extensions.evaluation.metric.nb_impl as metrics
 from recsys_framework_extensions.sparse.utils import compute_item_popularity_from_urm
 
 

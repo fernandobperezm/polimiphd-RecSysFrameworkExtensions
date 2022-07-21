@@ -12,7 +12,7 @@ from Recommenders.BaseRecommender import BaseRecommender
 from recsys_framework_extensions.data.mixins import ParquetDataMixin, NumpyDictDataMixin
 from recsys_framework_extensions.decorators import timeit
 from recsys_framework_extensions.evaluation.loops import evaluate_loop, count_recommended_items_loop
-import recsys_framework_extensions.evaluation.metrics as metrics
+import recsys_framework_extensions.evaluation.metric.nb_impl as metrics
 from recsys_framework_extensions.logging import get_logger
 from tqdm import tqdm
 
@@ -69,10 +69,14 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             EvaluatorMetrics.HIT_RATE,
             EvaluatorMetrics.ARHR,
             EvaluatorMetrics.F1,
+
             EvaluatorMetrics.COVERAGE_USER,
             EvaluatorMetrics.COVERAGE_USER_HIT,
             EvaluatorMetrics.COVERAGE_ITEM,
             EvaluatorMetrics.COVERAGE_ITEM_HIT,
+            # EvaluatorMetrics.USERS_IN_GT,
+            # EvaluatorMetrics.ITEMS_IN_GT,
+
             EvaluatorMetrics.NOVELTY,
             EvaluatorMetrics.RATIO_NOVELTY,
             EvaluatorMetrics.DIVERSITY_GINI,
@@ -103,8 +107,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         if num_users_evaluated <= 0:
             raise ValueError("TODO: fernando-debugger complete")
 
-        novelty_scores_train = metrics.novelty_train(
-            urm_train=self.urm_train,
+        novelty_scores_train = metrics.nb_novelty_train(
+            urm_train=self.urm_train
         )
 
         df_mean_scores = df_scores.describe()
@@ -152,13 +156,13 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 metric_recommendations=df_mean_scores[(cutoff, EvaluatorMetrics.NOVELTY.value)]["mean"],
             )
 
-            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER.value)]["mean"] = metrics.coverage_user_mean(
+            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER.value)]["mean"] = metrics.nb_coverage_user_mean(
                 arr_user_mask=df_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER.value)].to_numpy(),
                 arr_users_to_ignore=self.ignore_users_ID,
                 num_total_users=self.n_users,
             )
 
-            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER_HIT.value)]["mean"] = metrics.coverage_user_mean(
+            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER_HIT.value)]["mean"] = metrics.nb_coverage_user_mean(
                 arr_user_mask=df_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER_HIT.value)].to_numpy(),
                 arr_users_to_ignore=self.ignore_users_ID,
                 num_total_users=self.n_users,
@@ -178,7 +182,11 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         )
 
         for cutoff, metric in itertools.product(self._str_cutoffs, self._str_metrics):
-            dict_results[int(cutoff)][metric] = df_mean_scores[(cutoff, metric)]["mean"]
+            try:
+                dict_results[int(cutoff)][metric] = df_mean_scores[(cutoff, metric)]["mean"]
+            except Exception as e:
+                print(cutoff, metric, df_mean_scores, dict_results)
+                raise e
 
         df_results = pd.DataFrame.from_dict(
             data=dict_results,
