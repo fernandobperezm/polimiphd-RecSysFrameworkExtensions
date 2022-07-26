@@ -225,7 +225,7 @@ def py_shannon_entropy(
 
     n_recommendations = recommended_counter.sum()
 
-    recommended_probability = recommended_counter/n_recommendations
+    recommended_probability = recommended_counter / n_recommendations
 
     shannon_entropy = -np.sum(recommended_probability * np.log2(recommended_probability))
 

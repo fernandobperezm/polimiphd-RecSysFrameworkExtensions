@@ -1,12 +1,18 @@
 import numba as nb
 import numpy as np
+import time
 from scipy import sparse
 
 import Evaluation.metrics as framework_metric
 import recsys_framework_extensions.evaluation.metric.py_impl as py_metric
 
 from recsys_framework_extensions.sparse.utils import compute_item_popularity_from_urm
+from recsys_framework_extensions.logging import get_logger
 
+
+logger = get_logger(
+    logger_name=__file__,
+)
 
 nb_average_precision = nb.njit(
     py_metric.py_average_precision
@@ -151,16 +157,23 @@ _pos_items = np.asarray([1], dtype=np.int32)
 _relevance = np.asarray([1.], dtype=np.float32)
 _scores = np.asarray([1.], dtype=np.float32)
 _counter_recommended_items = np.array([1, 2, 3, 4, 5], dtype=np.int32)
+_item_popularity = np.asarray([10, 5, 2, 3, 8], dtype=np.int32)
+_num_items = _item_popularity.shape[0]
+_num_interactions = np.sum(_item_popularity)
 
-
-nb_average_precision(
-    is_relevant=_is_relevant
+start = time.time()
+logger.info(
+    "Compiling numba jit-optimized metrics."
 )
+
 nb_precision(
     is_relevant=_is_relevant
 )
 nb_recall(
     is_relevant=_is_relevant, pos_items=_pos_items
+)
+nb_average_precision(
+    is_relevant=_is_relevant
 )
 nb_ndcg(
     ranked_list=_ranked_list, pos_items=_pos_items, relevance=_relevance, at=2
@@ -171,9 +184,30 @@ nb_dcg(
 nb_rr(
     is_relevant=_is_relevant
 )
+nb_hit_rate(
+    is_relevant=_is_relevant
+)
+nb_arhr_all_hits(
+    is_relevant=_is_relevant,
+)
 nb_f1_score(
     score_precision=nb_precision(is_relevant=_is_relevant),
     score_recall=nb_recall(is_relevant=_is_relevant, pos_items=_pos_items),
+)
+nb_coverage_user(
+    is_relevant=_is_relevant,
+)
+nb_coverage_user_hit(
+    is_relevant=_is_relevant,
+)
+nb_coverage_item(
+    recommended_counter=_counter_recommended_items,
+)
+nb_novelty(
+    recommended_items_ids=_ranked_list,
+    item_popularity=_item_popularity,
+    num_items=_num_items,
+    num_interactions=_num_interactions,
 )
 nb_diversity_gini(
     recommended_counter=_counter_recommended_items,
@@ -184,67 +218,14 @@ nb_diversity_herfindahl(
 nb_shannon_entropy(
     recommended_counter=_counter_recommended_items,
 )
+nb_ratio_recommendation_vs_train(
+    metric_train=0.5,
+    metric_recommendations=0.8,
+)
 
-assert np.allclose(
-    nb_average_precision(is_relevant=_is_relevant),
-    py_metric.py_average_precision(is_relevant=_is_relevant),
+end = time.time()
+logger.info(
+    f"Finished compiling numba jit-optimized metrics. Took {end - start:.2f} seconds."
 )
-assert np.allclose(
-    nb_precision(is_relevant=_is_relevant),
-    py_metric.py_precision(is_relevant=_is_relevant),
-)
-assert np.allclose(
-    nb_recall(is_relevant=_is_relevant, pos_items=_pos_items),
-    py_metric.py_recall(is_relevant=_is_relevant, pos_items=_pos_items),
-)
-assert np.allclose(
-    nb_ndcg(ranked_list=_ranked_list, pos_items=_pos_items, relevance=_relevance, at=2),
-    py_metric.py_ndcg(ranked_list=_ranked_list, pos_items=_pos_items, relevance=_relevance, at=2),
-)
-assert np.allclose(
-    nb_rr(is_relevant=_is_relevant),
-    py_metric.py_rr(is_relevant=_is_relevant),
-)
-assert np.allclose(
-    nb_hit_rate(is_relevant=_is_relevant),
-    py_metric.py_hit_rate(is_relevant=_is_relevant),
-)
-assert np.allclose(
-    nb_arhr_all_hits(is_relevant=_is_relevant),
-    py_metric.py_arhr_all_hits(is_relevant=_is_relevant),
-)
-assert np.allclose(
-    nb_f1_score(
-        score_precision=nb_precision(is_relevant=_is_relevant),
-        score_recall=nb_recall(is_relevant=_is_relevant, pos_items=_pos_items),
-    ),
-    py_metric.py_f1_score_micro_averaged(
-        score_precision=nb_precision(is_relevant=_is_relevant),
-        score_recall=nb_recall(is_relevant=_is_relevant, pos_items=_pos_items)
-    ),
-)
-assert np.allclose(
-    nb_diversity_gini(
-        recommended_counter=_counter_recommended_items,
-    ),
-    py_metric.py_diversity_gini(
-        recommended_counter=_counter_recommended_items,
-    ),
-)
-assert np.allclose(
-    nb_diversity_herfindahl(
-        recommended_counter=_counter_recommended_items,
-    ),
-    py_metric.py_diversity_herfindahl(
-        recommended_counter=_counter_recommended_items,
-    ),
-)
-assert np.allclose(
-    nb_shannon_entropy(
-        recommended_counter=_counter_recommended_items,
-    ),
-    py_metric.py_shannon_entropy(
-        recommended_counter=_counter_recommended_items,
-    ),
-)
+
 
