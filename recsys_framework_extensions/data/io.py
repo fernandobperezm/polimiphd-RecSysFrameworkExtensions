@@ -13,7 +13,7 @@ import shutil
 import warnings
 import zipfile
 from enum import Enum
-from typing import Any, Type
+from typing import Any, Type, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -28,7 +28,10 @@ logger = get_logger(
 )
 
 
-def attach_to_extended_json_decoder(enum_class: Type[Enum]):
+T_ENUM = TypeVar("T_ENUM", bound=Type[Enum])
+
+
+def attach_to_extended_json_decoder(enum_class: T_ENUM) -> T_ENUM:
     """
     Examples
     --------
