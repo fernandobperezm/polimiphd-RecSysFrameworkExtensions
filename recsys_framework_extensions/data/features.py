@@ -58,6 +58,7 @@ def _compute_diff_timestamps_per_user_item_group(
     assert _is_column_a_datetime(df=series_group, column="")
 
     timestamps = series_group.to_list()
+
     iter_timestamps = iterator_previous_and_current(timestamps)
 
     diff_per_group = []
@@ -96,16 +97,26 @@ def _compute_diff_timestamps_per_user_item_group(
 
     assert len(diff_per_group) == len(timestamps)
 
+    columns = [
+        "feature_last_seen_total_seconds",
+        "feature_last_seen_total_minutes",
+        "feature_last_seen_total_hours",
+        "feature_last_seen_total_days",
+        "feature_last_seen_total_weeks",
+    ]
+    index = series_group.index
+
+    if len(diff_per_group) == 0:
+        return pd.DataFrame(
+            data=None,
+            columns=columns,
+            index=index,
+        )
+
     return pd.DataFrame.from_records(
         data=diff_per_group,
-        columns=[
-            "feature_last_seen_total_seconds",
-            "feature_last_seen_total_minutes",
-            "feature_last_seen_total_hours",
-            "feature_last_seen_total_days",
-            "feature_last_seen_total_weeks",
-        ],
-        index=series_group.index,
+        columns=columns,
+        index=index,
     )
 
 
@@ -215,14 +226,6 @@ def extract_last_seen_user_item(
         lambda df_group: df_group.shape[0] >= 2
     )
 
-    df_grouped = df.groupby(
-        by=[users_column, items_column],
-        as_index=False,
-        sort=False,
-        observed=True,  # Avoid computing this on categorical.
-        dropna=True,
-    )
-
     if _is_column_a_datetime(df, column=timestamp_column):
         feature_columns = [
             "feature_last_seen_total_seconds",
@@ -231,48 +234,59 @@ def extract_last_seen_user_item(
             "feature_last_seen_total_days",
             "feature_last_seen_total_weeks",
         ]
-        df_last_seen_components: pd.DataFrame = df_grouped[timestamp_column].progress_apply(
-            func=_compute_diff_timestamps_per_user_item_group,
-        )
+        func_df_apply = _compute_diff_timestamps_per_user_item_group
     else:
         feature_columns = ["feature_last_seen_euclidean"]
-        df_last_seen_components = df_grouped[timestamp_column].progress_apply(
-            func=_compute_diff_euclidean_timestamps_per_user_item_group,
+        func_df_apply = _compute_diff_euclidean_timestamps_per_user_item_group
+
+    if df.empty:
+        df_keep = pd.DataFrame(data=None, columns=feature_columns)
+        df_removed = pd.DataFrame(data=None, columns=feature_columns)
+    else:
+        df_grouped = df.groupby(
+            by=[users_column, items_column],
+            as_index=False,
+            sort=False,
+            observed=True,  # Avoid computing this on categorical.
+            dropna=True,
+        )
+        df_last_seen_components: pd.DataFrame = df_grouped[timestamp_column].progress_apply(
+            func=func_df_apply,
         )
 
-    assert df.shape[0] == df_last_seen_components.shape[0]
+        assert df.shape[0] == df_last_seen_components.shape[0]
 
-    df = df.merge(
-        right=df_last_seen_components,
-        how="inner",
-        left_index=True,
-        right_index=True,
-        left_on=None,
-        right_on=None,
-        suffixes=("", ""),
-        sort=False,
-    )
+        df = df.merge(
+            right=df_last_seen_components,
+            how="inner",
+            left_index=True,
+            right_index=True,
+            left_on=None,
+            right_on=None,
+            suffixes=("", ""),
+            sort=False,
+        )
 
-    df_last_user_item_record = df_grouped.nth([-1])
+        df_last_user_item_record = df_grouped.nth([-1])
 
-    df_keep: pd.DataFrame = df[
-        df.index.isin(
+        df_keep: pd.DataFrame = df[
+            df.index.isin(
+                df_last_user_item_record.index
+            )
+        ]
+
+        df_removed: pd.DataFrame = df.drop(
             df_last_user_item_record.index
         )
-    ]
-
-    df_removed: pd.DataFrame = df.drop(
-        df_last_user_item_record.index
-    )
 
     df_keep = _check_empty_dataframe(
         df=df_keep,
-        columns=[users_column, items_column, timestamp_column, *feature_columns]
+        columns=[users_column, items_column, timestamp_column, *feature_columns],
     )
 
     df_removed = _check_empty_dataframe(
         df=df_removed,
-        columns=[users_column, items_column, timestamp_column, *feature_columns]
+        columns=[users_column, items_column, timestamp_column, *feature_columns],
     )
 
     return df_keep, df_removed
@@ -539,10 +553,11 @@ def _check_empty_dataframe(
     df: pd.DataFrame,
     columns: list[str],
 ) -> pd.DataFrame:
-    if df.shape[0] > 0:
-        return df
-    else:
+    if df.empty:
         return pd.DataFrame(
             data=None,
             columns=columns,
         )
+    else:
+        return df
+
