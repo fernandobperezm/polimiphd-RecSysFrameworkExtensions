@@ -14,6 +14,8 @@ from scipy.stats.stats import DescribeResult
 from tqdm import tqdm
 
 from recsys_framework_extensions.data.io import DataIO
+from recsys_framework_extensions.data.validate import ensure_csr_matrix, ensure_leave_one_out_dataset, \
+    ensure_implicit_dataset, ensure_disjoint_sparse_matrices
 from recsys_framework_extensions.evaluation import EvaluationStrategy
 from recsys_framework_extensions.logging import get_logger
 
@@ -835,12 +837,50 @@ class LazyInteractionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
             )
 
     def _get_urm_leave_last_k_out_splits(self) -> InteractionsDataSplits:
-        return InteractionsDataSplits(
+        splits = InteractionsDataSplits(
             sp_urm_train=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TRAIN],
             sp_urm_validation=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_VALIDATION],
             sp_urm_train_validation=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TRAIN_VALIDATION],
             sp_urm_test=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TEST],
         )
+        
+        logger.info(
+            f"Ensuring dataset consistency. Testing for CSR Matrices and Implicit Dataset"
+        )
+        for sp_urm in splits:
+            ensure_csr_matrix(urm=sp_urm)
+            ensure_implicit_dataset(urm=sp_urm)
+
+        logger.info(
+            f"Ensuring dataset consistency. Testing for leave-last-out on train_validation and test"
+        )
+        for sp_urm in [splits.sp_urm_validation, splits.sp_urm_test]:
+            ensure_leave_one_out_dataset(
+                urm=sp_urm,
+            )
+
+        logger.info(
+            f"Ensuring dataset consistency. Testing for disjoint matrices train, validation, and test"
+        )
+        ensure_disjoint_sparse_matrices(
+            urm_list=[
+                splits.sp_urm_train,
+                splits.sp_urm_validation,
+                splits.sp_urm_test,
+            ],
+        )
+
+        logger.info(
+            f"Ensuring dataset consistency. Testing for disjoint matrices train_validation and test"
+        )
+        ensure_disjoint_sparse_matrices(
+            urm_list=[
+                splits.sp_urm_train_validation,
+                splits.sp_urm_test,
+            ],
+        )
+
+        return splits
 
     def _get_urm_timestamp_splits(self) -> InteractionsDataSplits:
         return InteractionsDataSplits(
