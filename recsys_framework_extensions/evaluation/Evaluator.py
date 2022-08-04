@@ -1,5 +1,7 @@
 import itertools
 import os
+
+from enum import Enum
 from functools import partial
 from typing import Sequence
 
@@ -20,6 +22,10 @@ from tqdm import tqdm
 logger = get_logger(
     logger_name=__name__,
 )
+
+
+class ExtendedEvaluatorMetrics(Enum):
+    POSITION_FIRST_RELEVANT = "POSITION_FIRST_RELEVANT"
 
 
 class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictDataMixin):
@@ -85,9 +91,11 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL,
             EvaluatorMetrics.SHANNON_ENTROPY,
             EvaluatorMetrics.RATIO_SHANNON_ENTROPY,
+
+            ExtendedEvaluatorMetrics.POSITION_FIRST_RELEVANT,
         ]
         self._str_metrics: list[str] = [
-            metric.value
+            str(metric.value)
             for metric in self._metrics
         ]
 
@@ -338,6 +346,9 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                     arr_cutoff_novelty_score,
                     arr_cutoff_coverage_users,
                     arr_cutoff_coverage_users_hit,
+
+                    arr_cutoff_position_first_relevant_item,
+
                     arr_count_recommended_items,
                     arr_count_relevant_recommended_items,
                 ) = evaluate_loop(
@@ -378,6 +389,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
                 df_results[(str(cutoff), EvaluatorMetrics.SHANNON_ENTROPY.value)] = 0.
                 df_results[(str(cutoff), EvaluatorMetrics.RATIO_SHANNON_ENTROPY.value)] = 0.
+
+                df_results[(str(cutoff), ExtendedEvaluatorMetrics.POSITION_FIRST_RELEVANT.value)] = arr_cutoff_position_first_relevant_item
 
                 dict_cutoff_recommended_item_counters[str(cutoff)] += arr_count_recommended_items
                 dict_cutoff_relevant_recommended_item_counters[str(cutoff)] += arr_count_relevant_recommended_items

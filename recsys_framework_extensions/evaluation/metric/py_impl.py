@@ -238,3 +238,18 @@ def py_ratio_recommendation_vs_train(
 ) -> float:
     return metric_recommendations / metric_train
 
+
+def py_position_relevant_items(
+    is_relevant: np.ndarray,
+    cutoff: int,
+) -> int:
+    assert is_relevant.ndim == 1
+    assert is_relevant.size == cutoff
+
+    arr_bool_is_relevant = np.asarray(is_relevant, dtype=np.bool8)
+
+    for position, item_relevant in enumerate(arr_bool_is_relevant):
+        if item_relevant:
+            return cutoff - position
+
+    return 0

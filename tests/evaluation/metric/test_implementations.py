@@ -14,14 +14,15 @@ logger = get_logger(
 class TestMetrics:
     ranked_list = np.asarray([3, 2, 1], dtype=np.int32)
     is_relevant = np.asarray([False, False, True], dtype=np.bool_)
+    cutoff = 3
     pos_items = np.asarray([1], dtype=np.int32)
     relevance = np.asarray([1.], dtype=np.float32)
     scores = np.asarray([1.], dtype=np.float32)
     counter_recommended_items = np.array([1, 1, 1, 0, 0], dtype=np.int32)
     item_popularity = np.asarray([10, 5, 2, 3, 8], dtype=np.int32)
-    num_items = item_popularity.shape[0]
-    num_interactions = np.sum(item_popularity)
-    num_users = 1
+    num_items: int = item_popularity.shape[0]
+    num_interactions: int = np.sum(item_popularity)
+    num_users: int = 1
 
     def test_numba_and_python_implementations_are_equal(
         self,
@@ -127,6 +128,16 @@ class TestMetrics:
             py_metric.py_ratio_recommendation_vs_train(
                 metric_train=0.5,
                 metric_recommendations=0.8,
+            )
+        )
+        assert np.array_equal(
+            nb_metric.nb_position_relevant_items(
+                is_relevant=self.is_relevant,
+                cutoff=self.cutoff,
+            ),
+            py_metric.py_position_relevant_items(
+                is_relevant=self.is_relevant,
+                cutoff=self.cutoff,
             )
         )
 
@@ -237,5 +248,41 @@ class TestMetrics:
             py_metric.py_shannon_entropy(
                 recommended_counter=self.counter_recommended_items,
             ),
+        )
+
+    def test_position_relevant_items_yield_correct_results(
+        self
+    ):
+        # Arrange
+        cases_to_try = [
+            np.array([True, True, True], dtype=np.bool8),
+            np.array([False, True, True], dtype=np.bool8),
+            np.array([False, False, True], dtype=np.bool8),
+            np.array([False, False, False], dtype=np.bool8),
+        ]
+        expected_results = [
+            3,
+            2,
+            1,
+            0,
+        ]
+
+        # Act
+        obtained_results = [
+            nb_metric.nb_position_relevant_items(
+                is_relevant=case_is_relevant,
+                cutoff=3,
+            )
+            for case_is_relevant in cases_to_try
+        ]
+
+        # Assert
+        assert all(
+            np.array_equal(
+                expected,
+                obtained,
+                equal_nan=True,
+            )
+            for expected, obtained in zip(expected_results, obtained_results)
         )
         

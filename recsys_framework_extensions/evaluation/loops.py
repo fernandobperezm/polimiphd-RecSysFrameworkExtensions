@@ -79,6 +79,7 @@ def _nb_loop_evaluate_users(
     arr_cutoff_novelty_score = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_coverage_users = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_coverage_users_hit = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
+    arr_cutoff_position_first_relevant_item = np.zeros_like(arr_batch_user_ids, dtype=np.int32)
     arr_count_recommended_items = np.zeros(shape=(num_items, ), dtype=np.int32)
     arr_count_relevant_recommended_items = np.zeros(shape=(num_items, ), dtype=np.int32)
 
@@ -158,6 +159,11 @@ def _nb_loop_evaluate_users(
             is_relevant=is_relevant_current_cutoff,
         )
 
+        arr_cutoff_position_first_relevant_item[idx_batch_user_id] = metrics.nb_position_relevant_items(
+            is_relevant=is_relevant_current_cutoff,
+            cutoff=cutoff,
+        )
+
         arr_count_recommended_items[
             recommended_items_current_cutoff
         ] += 1
@@ -177,6 +183,9 @@ def _nb_loop_evaluate_users(
         arr_cutoff_novelty_score,
         arr_cutoff_coverage_users,
         arr_cutoff_coverage_users_hit,
+
+        arr_cutoff_position_first_relevant_item,
+
         arr_count_recommended_items,
         arr_count_relevant_recommended_items,
     )

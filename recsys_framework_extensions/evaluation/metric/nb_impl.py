@@ -68,6 +68,9 @@ nb_dcg = nb.njit(
 nb_prepare_ndcg = nb.njit(
     py_metric.py_prepare_ndcg
 )
+nb_position_relevant_items = nb.njit(
+    py_metric.py_position_relevant_items,
+)
 
 
 @nb.njit
@@ -221,6 +224,10 @@ nb_shannon_entropy(
 nb_ratio_recommendation_vs_train(
     metric_train=0.5,
     metric_recommendations=0.8,
+)
+nb_position_relevant_items(
+    is_relevant=_is_relevant,
+    cutoff=3,
 )
 
 end = time.time()
