@@ -3,14 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# LOG
+Log/
+logs/
+
 # IDEA
 .idea/*
-
-# LOG
-**/Log/*
-**/logs/*
-
-**/.pytest_cache/*
 
 # Ignore cython compiled files
 **/Cython/*.pyd
@@ -113,15 +111,25 @@ ENV/
 # mypy
 .mypy_cache/
 
-# macOS cache
-**/.DS_Store
+# pytest
+.pytest_cache/
 
 # Dask
-**/dask-worker-space/**
+dask-worker-space/
+
+# macOS cache
+**/.DS_Store
 
 # Backups
 **/bk/*
 
-# Poetry lock.
-poetry.lock
+# Project/Package/Experiments data files
+Data_manager_split_datasets/**
+Data_manager_offline_datasets/**
+result_experiments/
+result_experiments*/
+data/
+__*/
 
+# Poetry
+poetry.lock
