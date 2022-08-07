@@ -17,11 +17,9 @@ from recsys_framework_extensions.data.io import DataIO
 from recsys_framework_extensions.data.validate import ensure_csr_matrix, ensure_leave_one_out_dataset, \
     ensure_implicit_dataset, ensure_disjoint_sparse_matrices
 from recsys_framework_extensions.evaluation import EvaluationStrategy
-from recsys_framework_extensions.logging import get_logger
+import logging
 
-logger = get_logger(
-    logger_name=__file__,
-)
+logger = logging.getLogger(__name__)
 
 
 class InteractionsDataSplits(NamedTuple):

@@ -15,13 +15,11 @@ from recsys_framework_extensions.data.mixins import ParquetDataMixin, NumpyDictD
 from recsys_framework_extensions.decorators import timeit
 from recsys_framework_extensions.evaluation.loops import evaluate_loop, count_recommended_items_loop
 import recsys_framework_extensions.evaluation.metric.nb_impl as metrics
-from recsys_framework_extensions.logging import get_logger
+import logging
 from tqdm import tqdm
 
 
-logger = get_logger(
-    logger_name=__name__,
-)
+logger = logging.getLogger(__name__)
 
 
 class ExtendedEvaluatorMetrics(Enum):

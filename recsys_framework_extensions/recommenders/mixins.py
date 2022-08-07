@@ -2,11 +2,9 @@ from typing import Optional
 
 from recsys_framework_extensions.data.io import DataIO
 
-from recsys_framework_extensions.logging import get_logger
+import logging
 
-logger = get_logger(
-    logger_name=__file__,
-)
+logger = logging.getLogger(__name__)
 
 
 class MixinEmptySaveModel:

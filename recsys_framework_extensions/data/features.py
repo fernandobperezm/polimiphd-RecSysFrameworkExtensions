@@ -1,4 +1,5 @@
 import datetime
+import logging
 from itertools import tee, chain
 from typing import Literal, Iterable, TypeVar, Optional, Union
 
@@ -7,11 +8,9 @@ import pandas as pd
 from tqdm import tqdm
 
 from recsys_framework_extensions.decorators import log_calling_args
-from recsys_framework_extensions.logging import get_logger
 
-logger = get_logger(
-    logger_name=__name__,
-)
+
+logger = logging.getLogger(__name__)
 
 tqdm.pandas()
 

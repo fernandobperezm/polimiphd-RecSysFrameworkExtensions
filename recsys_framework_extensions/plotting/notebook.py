@@ -5,11 +5,9 @@ import holoviews as hv
 import numpy as np
 import pandas as pd
 
-from recsys_framework_extensions.logging import get_logger
+import logging
 
-logger = get_logger(
-    logger_name=__file__,
-)
+logger = logging.getLogger(__name__)
 
 
 def plot_curve_statistics_popularity_by_dataset_and_feature(

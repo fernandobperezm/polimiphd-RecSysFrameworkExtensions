@@ -5,12 +5,10 @@ from abc import ABC, abstractmethod
 from Data_manager.DataReader import DataReader as FrameworkDataReader
 
 from recsys_framework_extensions.data.dataset import BaseDataset
-from recsys_framework_extensions.logging import get_logger
+import logging
 
 
-logger = get_logger(
-    logger_name=__file__,
-)
+logger = logging.getLogger(__name__)
 
 
 class DataReader(FrameworkDataReader, ABC):

@@ -1,5 +1,6 @@
 import os
 import socket
+import logging
 from typing import Any, Callable
 from typing_extensions import ParamSpec
 
@@ -10,9 +11,8 @@ import toml
 from dask.distributed import Client, LocalCluster
 from distributed import Scheduler, Future, as_completed
 
-from recsys_framework_extensions.logging import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 _JobParams = ParamSpec("_JobParams")

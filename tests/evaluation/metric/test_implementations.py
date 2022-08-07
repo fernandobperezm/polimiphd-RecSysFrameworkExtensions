@@ -4,11 +4,9 @@ import recsys_framework_extensions.evaluation.metric.nb_impl as nb_metric
 import recsys_framework_extensions.evaluation.metric.py_impl as py_metric
 import Evaluation.metrics as framework_metric
 
-from recsys_framework_extensions.logging import get_logger
+import logging
 
-logger = get_logger(
-    logger_name=__file__,
-)
+logger = logging.getLogger(__name__)
 
 
 class TestMetrics:

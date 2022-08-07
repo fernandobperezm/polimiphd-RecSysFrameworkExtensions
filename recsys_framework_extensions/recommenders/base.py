@@ -10,13 +10,11 @@ from Recommenders.BaseRecommender import BaseRecommender
 from Recommenders.KNN.ItemKNNCFRecommender import ItemKNNCFRecommender
 from Recommenders.KNN.UserKNNCFRecommender import UserKNNCFRecommender
 
-from recsys_framework_extensions.logging import get_logger
+import logging
 from recsys_framework_extensions.recommenders.mixins import MixinLoadModel
 
 
-logger = get_logger(
-    logger_name=__file__,
-)
+logger = logging.getLogger(__name__)
 
 
 _RecommenderParams = ParamSpec("_RecommenderParams")

@@ -6,9 +6,9 @@ import time
 from typing import Callable, TypeVar, Optional
 from typing_extensions import ParamSpec
 
-from recsys_framework_extensions.logging import get_logger
+import logging
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 _FuncParams = ParamSpec("_FuncParams")
 _FuncValue = TypeVar("_FuncValue")

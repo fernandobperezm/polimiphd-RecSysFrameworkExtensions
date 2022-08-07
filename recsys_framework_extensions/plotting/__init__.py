@@ -15,7 +15,7 @@ import seaborn as sns
 
 from Utils.ResultFolderLoader import ResultFolderLoader
 
-from recsys_framework_extensions.logging import get_logger
+import logging
 
 import matplotlib
 
@@ -25,7 +25,7 @@ matplotlib.use(
 )
 import matplotlib.pyplot as plt
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 __VALID_CONTEXTS = ["paper", "talk", "notebook", "poster"]
 

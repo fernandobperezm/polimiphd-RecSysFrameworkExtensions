@@ -1,11 +1,9 @@
 import os
 import urllib.request
 
-from recsys_framework_extensions.logging import get_logger
+import logging
 
-logger = get_logger(
-    logger_name=__file__,
-)
+logger = logging.getLogger(__name__)
 
 
 def download_remote_file(

@@ -7,12 +7,9 @@ import scipy.sparse as sp
 
 from Data_manager.IncrementalSparseMatrix import IncrementalSparseMatrix_FilterIDs
 
-from recsys_framework_extensions.decorators import log_calling_args
-from recsys_framework_extensions.logging import get_logger
+import logging
 
-logger = get_logger(
-    logger_name=__name__,
-)
+logger = logging.getLogger(__name__)
 
 
 def _compute_statistics(

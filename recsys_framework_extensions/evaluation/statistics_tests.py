@@ -6,11 +6,9 @@ import numpy as np
 import statsmodels.api as sm
 from scipy import stats
 
-from recsys_framework_extensions.logging import get_logger
+import logging
 
-logger = get_logger(
-    logger_name=__name__,
-)
+logger = logging.getLogger(__name__)
 
 
 _MAX_P_VALUE = 0.05

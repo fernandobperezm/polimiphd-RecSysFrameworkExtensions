@@ -20,12 +20,10 @@ import pandas as pd
 import scipy.sparse as sps
 
 from Recommenders.DataIO import DataIO as RecSysFrameworkDataIO
-from recsys_framework_extensions.logging import get_logger
+import logging
 
 
-logger = get_logger(
-    logger_name=__file__
-)
+logger = logging.getLogger(__name__)
 
 
 T_ENUM = TypeVar("T_ENUM", bound=Type[Enum])

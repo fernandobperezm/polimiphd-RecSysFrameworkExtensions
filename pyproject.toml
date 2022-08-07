@@ -1,7 +1,6 @@
 [logs]
-dir_name = "logs"
-file_name = "recsys_framework_extensions.log"
-formatter = "%(process)d|%(asctime)s|%(levelname)s|%(module)s|%(funcName)s|%(lineno)d|%(message)s"
+dir_logs = "logs"
+filename_logs = "recsys_framework_extensions.log"
 
 [tool.mypy]
 python_version = "3.9"
@@ -9,7 +8,7 @@ ignore_missing_imports = true
 
 [tool.poetry]
 name = "recsys-framework-extensions"
-version = "0.2.0"
+version = "0.3.0"
 description = ""
 authors = ["Fernando Benjamín PÉREZ MAURERA <fperezmaurera@gmail.com>"]
 packages = [
