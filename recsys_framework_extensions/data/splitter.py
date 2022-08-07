@@ -1,5 +1,6 @@
 import enum
-from typing import Any, cast, Literal, Optional, Callable
+from typing import Any, cast, Literal, Optional, Callable, TypeVar
+from typing_extensions import ParamSpec
 
 import numpy as np
 import pandas as pd
@@ -17,6 +18,10 @@ T_KEEP = Literal["first", "last", False]
 T_AXIS = Literal["index", "columns"]
 T_MERGE = Literal["left", "inner", "right"]
 T_HOW = Literal["neq", "eq", "geq", "ge", "leq", "le", "isin", "not_isin"]
+
+
+_FuncParams = ParamSpec("_FuncParams")
+_FuncValue = TypeVar("_FuncValue")
 
 
 class E_KEEP(enum.Enum):
@@ -513,13 +518,17 @@ def remove_records_na(
 def apply_custom_function(
     df: pd.DataFrame,
     column: str,
-    func: Callable[[], Any],
-    func_name: str,
     axis: T_AXIS,
+    func: Callable[_FuncParams, _FuncValue],
+    func_name: str,
+    *func_args: _FuncParams.args,
+    **func_kwargs: _FuncParams.kwargs,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     df_keep = df.copy()
-    df_keep[column] = df[column].progress_apply(
+    df_keep[column] = df[column].apply(
         func=func,
+        args=func_args,
+        **func_kwargs,
     )
 
     df_removed = df.drop(
@@ -745,7 +754,7 @@ def randomly_sample_by_column_values(
         if "categorical" in str(df[column].dtype):
             arr_unique_values: np.ndarray = df[column].unique().to_numpy()
         else:
-            arr_unique_values: np.ndarray = df[column].unique()
+            arr_unique_values = df[column].unique()
 
         num_unique_values = arr_unique_values.shape[0]
 
