@@ -21,7 +21,7 @@ rng = np.random.default_rng(seed=seed)
 
 NUM_USERS = 100
 NUM_ITEMS = 700
-NUM_INTERACTIONS = 10_000
+NUM_INTERACTIONS = 1_000
 
 ALL_USER_IDS = np.arange(start=0, stop=NUM_USERS, step=1, dtype=np.int32)
 ALL_ITEM_IDS = np.arange(start=0, stop=NUM_ITEMS, step=1, dtype=np.int32)
@@ -42,6 +42,16 @@ TIMESTAMPS = np.array(
     ],
     dtype=object
 )
+
+
+@fixture
+def num_users() -> int:
+    return NUM_USERS
+
+
+@fixture
+def num_items() -> int:
+    return NUM_ITEMS
 
 
 @fixture
