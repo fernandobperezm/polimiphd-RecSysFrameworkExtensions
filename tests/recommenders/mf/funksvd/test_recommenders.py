@@ -10,7 +10,7 @@ from Recommenders.MatrixFactorization.Cython.MatrixFactorization_Cython import M
 
 class TestTrainMFFunkSVD:
     num_factors = 150
-    num_epochs = 100
+    num_epochs = 1000
     batch_size = 1_000
     learning_rate = 1e-1
     test_frac_negative_sampling = 0.5
@@ -36,61 +36,35 @@ class TestTrainMFFunkSVD:
         extended_funk_svd = MatrixFactorizationFunkSVD(
             urm_train=urm,
         )
-        # urm_coo = sparse.COO.from_scipy_sparse(urm)
-        # # jit-compile the main numba functions
-        # (
-        #     embeddings_users,
-        #     embeddings_items,
-        #     bias_global,
-        #     bias_users,
-        #     bias_items,
-        # ) = init_mf_funk_svd(
-        #     num_users=num_users,
-        #     num_items=num_items,
-        #     num_factors=self.num_factors,
-        #     embeddings_mean=self.init_mean,
-        #     embeddings_std_dev=self.init_std_dev,
-        #     seed=self.seed,
-        # )
-        # optimizer = NumbaFunkSVDOptimizer(
-        #     sgd_mode=self.sgd_mode,
-        #     num_users=num_users,
-        #     num_items=num_items,
-        #     num_factors=self.num_factors,
-        #     gamma=self.sgd_gamma,
-        #     beta_1=self.sgd_beta_1,
-        #     beta_2=self.sgd_beta_2,
-        # )
-        # run_epoch_funk_svd(
-        #     batch_size=self.batch_size,
-        #
-        #     num_users=num_users,
-        #     num_items=num_items,
-        #     num_samples=urm.nnz,
-        #     num_factors=self.num_factors,
-        #
-        #     user_embeddings=embeddings_users,
-        #     item_embeddings=embeddings_items,
-        #
-        #     bias_global=bias_global,
-        #     bias_users=bias_users,
-        #     bias_items=bias_items,
-        #
-        #     learning_rate=self.learning_rate,
-        #
-        #     optimizer=optimizer,
-        #
-        #     quota_negative_interactions=self.test_frac_negative_sampling,
-        #
-        #     reg_user=self.reg_user,
-        #     reg_item=self.reg_item,
-        #     reg_bias=self.reg_bias,
-        #
-        #     urm_coo=urm_coo,
-        #     urm_csr_indices=urm.indices,
-        #     urm_csr_indptr=urm.indptr,
-        #     use_bias=self.use_bias,
-        # )
+
+        #jit-compile
+        extended_funk_svd.fit(
+            batch_size=self.batch_size,
+            epochs=self.num_epochs,
+            init_mean=self.init_mean,
+            init_std_dev=self.init_std_dev,
+            learning_rate=self.learning_rate,
+            num_factors=self.num_factors,
+            random_seed=self.seed,
+
+            reg_user=self.reg_user,
+            reg_item=self.reg_item,
+            reg_bias=self.reg_bias,
+
+            quota_negative_interactions=self.test_frac_negative_sampling,
+            quota_dropout=None,
+
+            sgd_mode=self.sgd_mode,
+            sgd_gamma=self.sgd_gamma,
+            sgd_beta_1=self.sgd_beta_1,
+            sgd_beta_2=self.sgd_beta_2,
+
+            use_bias=self.use_bias,
+            use_embeddings=True,
+        )
+        extended_funk_svd = MatrixFactorizationFunkSVD(
+            urm_train=urm,
+        )
 
         # Act
         print("Start RecSys")
@@ -103,7 +77,7 @@ class TestTrainMFFunkSVD:
             learning_rate=self.learning_rate,
             use_bias=self.use_bias,
             use_embeddings=True,
-            sgd_mode='sgd',
+            sgd_mode=self.sgd_mode,
             negative_interactions_quota=self.test_frac_negative_sampling,
             dropout_quota=None,
             init_mean=self.init_mean,
@@ -135,7 +109,7 @@ class TestTrainMFFunkSVD:
             quota_negative_interactions=self.test_frac_negative_sampling,
             quota_dropout=None,
 
-            sgd_mode='sgd',
+            sgd_mode=self.sgd_mode,
             sgd_gamma=self.sgd_gamma,
             sgd_beta_1=self.sgd_beta_1,
             sgd_beta_2=self.sgd_beta_2,

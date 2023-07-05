@@ -4,10 +4,11 @@ import sparse
 from Recommenders.BaseMatrixFactorizationRecommender import BaseMatrixFactorizationRecommender
 from Recommenders.Incremental_Training_Early_Stopping import Incremental_Training_Early_Stopping
 
-from recsys_framework_extensions.recommenders.mf.funksvd.training import (
+from recsys_framework_extensions.recommenders.mf.funksvd.numba.mf_funk_svd_namedtuples import Optimizers, \
+    init_optimizers
+from recsys_framework_extensions.recommenders.mf.funksvd.numba.mf_funk_svd_namedtuples import (
     init_mf_funk_svd,
     run_epoch_funk_svd,
-    NumbaFunkSVDOptimizer,
 )
 
 import scipy.sparse
@@ -27,16 +28,17 @@ class MatrixFactorizationFunkSVD(BaseMatrixFactorizationRecommender, Incremental
             verbose=verbose
         )
 
-        self.urm_coo = sparse.COO.from_scipy_sparse(self.URM_train)
+        self.URM_train: scipy.sparse.csr_matrix = self.URM_train.astype(dtype=np.float32)
+        self.URM_train.sort_indices()
 
         self.n_users, self.n_items = self.URM_train.shape
         self.num_users, self.num_items = self.URM_train.shape
-        self.num_samples: int = urm_train.nnz
+        self.num_samples: int = self.URM_train.nnz
 
         self.normalize = False
         self.algorithm_name = "MF FunkSVD"
 
-        self.epochs: int = 300
+        self.num_epochs: int = 300
         self.batch_size: int = 1000
         self.learning_rate: float = 0.001
 
@@ -61,7 +63,7 @@ class MatrixFactorizationFunkSVD(BaseMatrixFactorizationRecommender, Incremental
         self.use_bias: bool = True
         self.use_embeddings: bool = True
 
-        self.optimizer: NumbaFunkSVDOptimizer = NumbaFunkSVDOptimizer(
+        self.optimizers: Optimizers = init_optimizers(
             sgd_mode=self.sgd_mode,
             num_users=self.num_users,
             num_items=self.num_items,
@@ -112,7 +114,7 @@ class MatrixFactorizationFunkSVD(BaseMatrixFactorizationRecommender, Incremental
                 quota_negative_interactions,
             )
 
-        self.epochs = epochs
+        self.num_epochs = epochs
         self.batch_size = batch_size
         self.learning_rate = learning_rate
 
@@ -129,7 +131,7 @@ class MatrixFactorizationFunkSVD(BaseMatrixFactorizationRecommender, Incremental
         self.sgd_beta_1 = sgd_beta_1
         self.sgd_beta_2 = sgd_beta_2
 
-        self.optimizer: NumbaFunkSVDOptimizer = NumbaFunkSVDOptimizer(
+        self.optimizers = init_optimizers(
             sgd_mode=self.sgd_mode,
             num_users=self.num_users,
             num_items=self.num_items,
@@ -148,18 +150,38 @@ class MatrixFactorizationFunkSVD(BaseMatrixFactorizationRecommender, Incremental
         self.random_seed = random_seed
 
         (
-            self.USER_factors,
-            self.ITEM_factors,
-            self.GLOBAL_bias,
-            self.USER_bias,
-            self.ITEM_bias,
+            self._csr_matrix,
+            self._gradients,
+            self._losses,
+            self._model,
+            self._parameters,
+            self._samples,
         ) = init_mf_funk_svd(
+            batch_size=self.batch_size,
+            frac_negative_sampling=self.quota_negative_interactions,
+
             embeddings_mean=self.init_mean,
             embeddings_std_dev=self.init_std_dev,
-            num_users=self.num_users,
-            num_items=self.num_items,
+
+            learning_rate=self.learning_rate,
+
+            reg_user=self.reg_user,
+            reg_item=self.reg_item,
+            reg_bias=self.reg_bias,
+
+            num_epochs=self.num_epochs,
             num_factors=self.num_factors,
+            num_items=self.num_items,
+            num_samples=self.num_samples,
+            num_users=self.num_users,
+
             seed=self.random_seed,
+
+            urm_csr_indices=self.URM_train.indices,
+            urm_csr_indptr=self.URM_train.indptr,
+            urm_csr_data=self.URM_train.data,
+
+            use_bias=self.use_bias,
         )
 
         self._prepare_model_for_validation()
@@ -195,36 +217,28 @@ class MatrixFactorizationFunkSVD(BaseMatrixFactorizationRecommender, Incremental
         num_epoch: int,
     ):
         (
-            self.USER_factors,
-            self.ITEM_factors,
-            self.GLOBAL_bias,
-            self.USER_bias,
-            self.ITEM_bias,
+            self._csr_matrix,
+            self._gradients,
+            self._losses,
+            self._model,
+            self.optimizers,
+            self._parameters,
+            self._samples,
         ) = run_epoch_funk_svd(
-            num_users=self.num_users,
-            num_items=self.num_items,
-            num_samples=self.num_samples,
-
-            user_embeddings=self.USER_factors,
-            item_embeddings=self.ITEM_factors,
-
-            bias_global=self.GLOBAL_bias,
-            bias_users=self.USER_bias,
-            bias_items=self.ITEM_bias,
-
-            urm_coo=self.urm_coo,
-            urm_csr_indptr=self.URM_train.indptr,
-            urm_csr_indices=self.URM_train.indices,
-
-            batch_size=self.batch_size,
-            learning_rate=self.learning_rate,
-            num_factors=self.num_factors,
-
-            reg_user=self.reg_user,
-            reg_item=self.reg_item,
-            reg_bias=self.reg_bias,
-
-            # optimizer=self.optimizer,
-            quota_negative_interactions=self.quota_negative_interactions,
-            use_bias=self.use_bias,
+            epoch=num_epoch,
+            csr_matrix=self._csr_matrix,
+            gradients=self._gradients,
+            losses=self._losses,
+            model=self._model,
+            optimizers=self.optimizers,
+            parameters=self._parameters,
+            samples=self._samples,
         )
+
+        self.USER_factors = self._model.arr_embeddings_users.copy()
+        self.ITEM_factors = self._model.arr_embeddings_items.copy()
+
+        if self.use_bias:
+            self.USER_bias = self._model.arr_biases_users.copy()
+            self.ITEM_bias = self._model.arr_biases_items.copy()
+            self.GLOBAL_bias = self._model.arr_biases_global.copy()

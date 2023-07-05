@@ -4,7 +4,6 @@ import numpy as np
 import numba as nb
 import scipy.sparse
 import sparse
-from tqdm import tqdm
 
 from recsys_framework_extensions.optimizer import (
     NumbaOptimizer,
@@ -14,9 +13,6 @@ from recsys_framework_extensions.sampling.sparse import (
     nb_sample_only_positives_from_sparse_coo_matrix,
     nb_sample_positives_and_negatives_from_sparse_matrix,
 )
-
-
-tqdm.pandas()
 
 
 @nb.experimental.jitclass

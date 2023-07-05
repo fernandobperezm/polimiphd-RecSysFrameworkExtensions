@@ -31,7 +31,7 @@ def timeit(func: Callable[_FuncParams, _FuncValue]) -> Callable[_FuncParams, _Fu
         ts = time.time()
         result = func(*args, **kwargs)
         te = time.time()
-        logger.info(
+        logger.warning(
             f"{func.__name__}|Execution time: {te - ts:.2f}s"
         )
         return result
