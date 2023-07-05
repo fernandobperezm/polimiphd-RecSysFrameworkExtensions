@@ -23,6 +23,7 @@ python = "~3.11"
 recsys-framework-public = { path = "../RecSysFramework_public/", develop = false }  # Use this when publishing the repo.
 attrs = "^23.1.0"
 dask = {extras = ["complete"], version = "^2023.6.1"}
+distributed = "^2023.6.1"
 numba = "^0.57.1"
 pyarrow = "^12.0.1"
 statsmodels = "^0.14.0"
