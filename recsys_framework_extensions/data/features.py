@@ -248,6 +248,7 @@ def extract_last_seen_user_item(
             sort=False,
             observed=True,  # Avoid computing this on categorical.
             dropna=True,
+            group_keys=False  # In Pandas 2.0 this defaults to True, however, this causes the resulting dataframe into having a multi-index composed of the values in <users_column> and <items_column>. We don't want a multi-index because it causes the `df.merge` call to fail with an exception.
         )
         df_last_seen_components: pd.DataFrame = df_grouped[timestamp_column].progress_apply(
             func=func_df_apply,
