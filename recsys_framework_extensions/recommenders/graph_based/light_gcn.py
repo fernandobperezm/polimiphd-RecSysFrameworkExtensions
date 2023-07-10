@@ -80,9 +80,11 @@ class SearchHyperParametersLightGCNRecommender(SearchHyperParametersBaseRecommen
             categories=["sgd", "adagrad", "adam", "rmsprop"],
         )
     )
+
+
 def create_normalized_adjacency_matrix_from_urm(
-    urm: sp.csr_matrix,
-    add_self_connection: bool = False,
+        urm: sp.csr_matrix,
+        add_self_connection: bool = False,
 ) -> sp.coo_matrix:
     """
     This method creates an adjacency matrix where users and items are nodes and edges represent interactions or impressions. Particularly, all edges are directed ones: an edge is created from a user to an item when the user interacted with the item. An edge is created from an item to a user when the item has been impressed to the user.
@@ -95,16 +97,18 @@ def create_normalized_adjacency_matrix_from_urm(
             add_self_connection=add_self_connection,
         )
     )
+
+
 class ExtendedLightGCNModel(torch.nn.Module):
     def __init__(
-        self,
-        adjacency_matrix: sp.coo_matrix,
-        num_users: int,
-        num_items: int,
-        num_layers: int,
-        embedding_size: int,
-        dropout_rate: float,
-        device: torch.device,
+            self,
+            adjacency_matrix: sp.coo_matrix,
+            num_users: int,
+            num_items: int,
+            num_layers: int,
+            embedding_size: int,
+            dropout_rate: float,
+            device: torch.device,
     ):
         super().__init__()
 
@@ -161,7 +165,7 @@ class ExtendedLightGCNModel(torch.nn.Module):
         return graph
 
     def computer(
-        self,
+            self,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         propagate methods for lightGCN
@@ -202,13 +206,13 @@ class ExtendedLightGCNModel(torch.nn.Module):
             users.long(), pos.long(), neg.long()
         )
         reg_loss = (
-            (1 / 2)
-            * (
-                userEmb0.norm(2).pow(2)
-                + posEmb0.norm(2).pow(2)
-                + negEmb0.norm(2).pow(2)
-            )
-            / float(len(users))
+                (1 / 2)
+                * (
+                        userEmb0.norm(2).pow(2)
+                        + posEmb0.norm(2).pow(2)
+                        + negEmb0.norm(2).pow(2)
+                )
+                / float(len(users))
         )
         pos_scores = torch.mul(users_emb, pos_emb)
         pos_scores = torch.sum(pos_scores, dim=1)
@@ -282,11 +286,11 @@ class ExtendedLightGCNRecommender(
     RECOMMENDER_NAME = "ExtendedLightGCNRecommender"
 
     def __init__(
-        self,
-        urm_train: sp.csr_matrix,
-        use_cython_sampler: bool = True,
-        use_gpu: bool = False,
-        verbose: bool = True,
+            self,
+            urm_train: sp.csr_matrix,
+            use_cython_sampler: bool = True,
+            use_gpu: bool = False,
+            verbose: bool = True,
     ):
         super().__init__(
             URM_train=urm_train,
@@ -331,17 +335,17 @@ class ExtendedLightGCNRecommender(
             self.device = torch.device("cpu:0")
 
     def fit(
-        self,
-        *,
-        epochs: int,
-        GNN_layers_K: int,
-        batch_size: int,
-        embedding_size: int,
-        learning_rate: float,
-        l2_reg: float,
-        dropout_rate: float,
-        sgd_mode: str,
-        **earlystopping_kwargs,
+            self,
+            *,
+            epochs: int,
+            GNN_layers_K: int,
+            batch_size: int,
+            embedding_size: int,
+            learning_rate: float,
+            l2_reg: float,
+            dropout_rate: float,
+            sgd_mode: str,
+            **earlystopping_kwargs,
     ):
         self.epochs = epochs
 
@@ -470,3 +474,10 @@ class ExtendedLightGCNRecommender(
         )
 
         self._print("Saving complete")
+
+
+__all__ = [
+    "ExtendedLightGCNRecommender",
+    "SearchHyperParametersLightGCNRecommender",
+    "create_normalized_adjacency_matrix_from_urm",
+]
