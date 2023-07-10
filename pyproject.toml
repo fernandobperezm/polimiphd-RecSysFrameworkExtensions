@@ -3,7 +3,7 @@ dir_logs = ".logs"
 filename_logs = "recsys_framework_extensions.log"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 ignore_missing_imports = true
 
 [tool.poetry]
@@ -19,7 +19,7 @@ exclude = [
 ]
 
 [tool.poetry.dependencies]
-python = "~3.11"
+python = "~3.10"
 recsys-framework-public = { path = "../RecSysFramework_public/", develop = false }  # Use this when publishing the repo.
 attrs = "^23.1.0"
 dask = {extras = ["complete"], version = "^2023.6.1"}
