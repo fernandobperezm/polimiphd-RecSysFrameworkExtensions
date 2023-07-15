@@ -22,11 +22,15 @@ def _assert_recommendations_array(
 
     num_batch_users = arr_batch_user_ids.shape[0]
     if isinstance(arr_batch_recommended_items, np.ndarray):
-        assert (num_batch_users, max_cutoff) == arr_batch_recommended_items.shape
-        assert arr_batch_user_ids.shape[0] == arr_batch_recommended_items.shape[0]
+        assert (
+            arr_batch_recommended_items.size > 0
+            and (num_batch_users, max_cutoff) == arr_batch_recommended_items.shape
+        ) or (
+            arr_batch_recommended_items.size == 0
+            and num_batch_users == arr_batch_recommended_items.shape[0]
+        )
     else:
-        assert num_batch_users == len(arr_batch_recommended_items)
-        assert arr_batch_user_ids.shape[0] == len(arr_batch_recommended_items)
+        assert len(arr_batch_recommended_items) == num_batch_users
 
 
 def _convert_to_nb_list_of_arrays(
@@ -34,9 +38,7 @@ def _convert_to_nb_list_of_arrays(
 ) -> list[np.ndarray]:
     typed_arr_batch_recommended_items = nb.typed.List()
     for rec in list_batch_recommended_items:
-        typed_arr_batch_recommended_items.append(
-            np.asarray(rec, dtype=np.int32)
-        )
+        typed_arr_batch_recommended_items.append(np.asarray(rec, dtype=np.int32))
 
     return typed_arr_batch_recommended_items
 
@@ -67,7 +69,6 @@ def _nb_loop_evaluate_users(
     num_items: int,
     num_interactions: int,
 ) -> tuple[np.ndarray, ...]:
-
     arr_cutoff_average_precision = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_precision = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_recall = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
@@ -79,16 +80,21 @@ def _nb_loop_evaluate_users(
     arr_cutoff_novelty_score = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_coverage_users = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
     arr_cutoff_coverage_users_hit = np.zeros_like(arr_batch_user_ids, dtype=np.float64)
-    arr_cutoff_position_first_relevant_item = np.zeros_like(arr_batch_user_ids, dtype=np.int32)
-    arr_count_recommended_items = np.zeros(shape=(num_items, ), dtype=np.int32)
-    arr_count_relevant_recommended_items = np.zeros(shape=(num_items, ), dtype=np.int32)
+    arr_cutoff_position_first_relevant_item = np.zeros_like(
+        arr_batch_user_ids, dtype=np.int32
+    )
+    arr_count_recommended_items = np.zeros(shape=(num_items,), dtype=np.int32)
+    arr_count_relevant_recommended_items = np.zeros(shape=(num_items,), dtype=np.int32)
 
     # for idx_batch_user_id, test_user_id in enumerate(arr_batch_user_ids):
     for idx_batch_user_id, tuple_user_recommendations in enumerate(
         zip(arr_batch_user_ids, arr_batch_recommended_items)
     ):
         test_user_id, user_recommended_items = tuple_user_recommendations
-        user_recommended_items = np.asarray(user_recommended_items, dtype=np.int32)
+        user_recommended_items = np.asarray(
+            user_recommended_items,
+            dtype=np.int32,
+        )
 
         user_profile_start = arr_urm_indptr[test_user_id]
         user_profile_end = arr_urm_indptr[test_user_id + 1]
@@ -98,10 +104,7 @@ def _nb_loop_evaluate_users(
 
         # Being the URM CSR, the indices are the non-zero column indexes
         user_is_recommended_item_relevant = np.asarray(
-            [
-                rec_item in user_relevant_items
-                for rec_item in user_recommended_items
-            ]
+            [rec_item in user_relevant_items for rec_item in user_recommended_items]
         )
 
         is_relevant_current_cutoff = user_is_recommended_item_relevant[:cutoff]
@@ -159,14 +162,14 @@ def _nb_loop_evaluate_users(
             is_relevant=is_relevant_current_cutoff,
         )
 
-        arr_cutoff_position_first_relevant_item[idx_batch_user_id] = metrics.nb_position_relevant_items(
+        arr_cutoff_position_first_relevant_item[
+            idx_batch_user_id
+        ] = metrics.nb_position_relevant_items(
             is_relevant=is_relevant_current_cutoff,
             cutoff=cutoff,
         )
 
-        arr_count_recommended_items[
-            recommended_items_current_cutoff
-        ] += 1
+        arr_count_recommended_items[recommended_items_current_cutoff] += 1
         arr_count_relevant_recommended_items[
             recommended_items_current_cutoff[is_relevant_current_cutoff]
         ] += 1
@@ -183,9 +186,7 @@ def _nb_loop_evaluate_users(
         arr_cutoff_novelty_score,
         arr_cutoff_coverage_users,
         arr_cutoff_coverage_users_hit,
-
         arr_cutoff_position_first_relevant_item,
-
         arr_count_recommended_items,
         arr_count_relevant_recommended_items,
     )
@@ -195,7 +196,9 @@ _nb_loop_evaluate_users(
     arr_urm_indptr=np.array([0, 1, 2], dtype=np.int32),
     arr_urm_indices=np.array([1, 1], dtype=np.int32),
     arr_urm_data=np.array([1, 1], dtype=np.int32),
-    arr_batch_recommended_items=np.array([[2, 1, 3, 4, 5], [2, 5, 8, 9, 1]], dtype=np.int32),
+    arr_batch_recommended_items=np.array(
+        [[2, 1, 3, 4, 5], [2, 5, 8, 9, 1]], dtype=np.int32
+    ),
     arr_batch_user_ids=np.array([0, 1], dtype=np.int32),
     arr_train_item_popularity=np.array([0, 2, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int32),
     cutoff=2,
@@ -265,18 +268,25 @@ def _nb_loop_count_recommended_items(
     arr_count_train_items: np.ndarray,
     arr_item_ids_to_ignore: np.ndarray,
 ) -> tuple[float, ...]:
-
-    arr_mask_valid_recommended_items = np.ones_like(arr_count_recommended_items, dtype=np.bool_)
+    arr_mask_valid_recommended_items = np.ones_like(
+        arr_count_recommended_items, dtype=np.bool_
+    )
     arr_mask_valid_recommended_items[arr_item_ids_to_ignore] = False
 
-    arr_mask_valid_relevant_recommended_items = np.ones_like(arr_count_relevant_recommended_items, dtype=np.bool_)
+    arr_mask_valid_relevant_recommended_items = np.ones_like(
+        arr_count_relevant_recommended_items, dtype=np.bool_
+    )
     arr_mask_valid_relevant_recommended_items[arr_item_ids_to_ignore] = False
 
     arr_mask_valid_train_items = np.ones_like(arr_count_train_items, dtype=np.bool_)
     arr_mask_valid_train_items[arr_item_ids_to_ignore] = False
 
-    arr_count_valid_recommended_items = arr_count_recommended_items[arr_mask_valid_recommended_items]
-    arr_count_valid_relevant_recommended_items = arr_count_relevant_recommended_items[arr_mask_valid_relevant_recommended_items]
+    arr_count_valid_recommended_items = arr_count_recommended_items[
+        arr_mask_valid_recommended_items
+    ]
+    arr_count_valid_relevant_recommended_items = arr_count_relevant_recommended_items[
+        arr_mask_valid_relevant_recommended_items
+    ]
     arr_count_valid_train_items = arr_count_train_items[arr_mask_valid_train_items]
 
     # First compute item coverages.
@@ -325,13 +335,10 @@ def _nb_loop_count_recommended_items(
     return (
         coverage_item,
         coverage_item_hit,
-
         diversity_gini_recommendations,
         ratio_diversity_gini,
-
         diversity_herfindahl_recommendations,
         ratio_diversity_herfindahl,
-
         shannon_entropy_recommendations,
         ratio_shannon_entropy,
     )
@@ -344,18 +351,19 @@ def count_recommended_items_loop(
     urm_train: sp.csr_matrix,
 ) -> tuple[float, ...]:
     arr_count_recommended_items = np.asarray(
-        arr_count_recommended_items, dtype=np.int32,
+        arr_count_recommended_items,
+        dtype=np.int32,
     )
     arr_count_relevant_recommended_items = np.asarray(
-        arr_count_relevant_recommended_items, dtype=np.int32,
+        arr_count_relevant_recommended_items,
+        dtype=np.int32,
     )
     arr_item_ids_to_ignore = np.asarray(
-        arr_item_ids_to_ignore, dtype=np.int32,
+        arr_item_ids_to_ignore,
+        dtype=np.int32,
     )
     arr_count_train_items = np.asarray(
-        np.ediff1d(
-            sp.csc_matrix(urm_train).indptr
-        ),
+        np.ediff1d(sp.csc_matrix(urm_train).indptr),
         dtype=np.int32,
     )
 
@@ -365,6 +373,3 @@ def count_recommended_items_loop(
         arr_count_recommended_items=arr_count_recommended_items,
         arr_count_relevant_recommended_items=arr_count_relevant_recommended_items,
     )
-
-
-

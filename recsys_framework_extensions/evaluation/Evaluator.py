@@ -9,11 +9,18 @@ import numpy as np
 import pandas as pd
 import recsys_framework_extensions.evaluation.statistics_tests as st_tests
 import scipy.sparse as sp
-from Evaluation.Evaluator import EvaluatorHoldout, EvaluatorMetrics, get_result_string_df
+from Evaluation.Evaluator import (
+    EvaluatorHoldout,
+    EvaluatorMetrics,
+    get_result_string_df,
+)
 from Recommenders.BaseRecommender import BaseRecommender
 from recsys_framework_extensions.data.mixins import ParquetDataMixin, NumpyDictDataMixin
 from recsys_framework_extensions.decorators import timeit
-from recsys_framework_extensions.evaluation.loops import evaluate_loop, count_recommended_items_loop
+from recsys_framework_extensions.evaluation.loops import (
+    evaluate_loop,
+    count_recommended_items_loop,
+)
 import recsys_framework_extensions.evaluation.metric.nb_impl as metrics
 import logging
 from tqdm import tqdm
@@ -27,9 +34,7 @@ class ExtendedEvaluatorMetrics(Enum):
 
 
 class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictDataMixin):
-    """ExtendedEvaluatorHoldout
-
-    """
+    """ExtendedEvaluatorHoldout"""
 
     EVALUATOR_NAME = "ExtendedEvaluatorHoldout"
 
@@ -45,7 +50,6 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         ignore_users=None,
         verbose: bool = True,
     ):
-
         super().__init__(
             urm_test,
             cutoff_list=cutoff_list,
@@ -54,15 +58,12 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             exclude_seen=exclude_seen,
             ignore_items=ignore_items,
             ignore_users=ignore_users,
-            verbose=verbose
+            verbose=verbose,
         )
         self.urm_train = urm_train
 
         self._cutoffs: list[int] = self.cutoff_list
-        self._str_cutoffs = [
-            str(cutoff)
-            for cutoff in self._cutoffs
-        ]
+        self._str_cutoffs = [str(cutoff) for cutoff in self._cutoffs]
 
         self._metrics = [
             EvaluatorMetrics.PRECISION,
@@ -73,14 +74,12 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             EvaluatorMetrics.HIT_RATE,
             EvaluatorMetrics.ARHR,
             EvaluatorMetrics.F1,
-
             EvaluatorMetrics.COVERAGE_USER,
             EvaluatorMetrics.COVERAGE_USER_HIT,
             EvaluatorMetrics.COVERAGE_ITEM,
             EvaluatorMetrics.COVERAGE_ITEM_HIT,
             # EvaluatorMetrics.USERS_IN_GT,
             # EvaluatorMetrics.ITEMS_IN_GT,
-
             EvaluatorMetrics.NOVELTY,
             EvaluatorMetrics.RATIO_NOVELTY,
             EvaluatorMetrics.DIVERSITY_GINI,
@@ -89,13 +88,9 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL,
             EvaluatorMetrics.SHANNON_ENTROPY,
             EvaluatorMetrics.RATIO_SHANNON_ENTROPY,
-
-            ExtendedEvaluatorMetrics.POSITION_FIRST_RELEVANT,
+            # ExtendedEvaluatorMetrics.POSITION_FIRST_RELEVANT,
         ]
-        self._str_metrics: list[str] = [
-            str(metric.value)
-            for metric in self._metrics
-        ]
+        self._str_metrics: list[str] = [str(metric.value) for metric in self._metrics]
 
     def compute_mean_score_on_evaluated_users(
         self,
@@ -105,17 +100,13 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             df_scores,
             dict_recommended_item_distribution,
             dict_relevant_recommended_item_distribution,
-        ) = self._evaluate_recommender(
-            recommender=recommender_object
-        )
+        ) = self._evaluate_recommender(recommender=recommender_object)
 
         num_users_evaluated = df_scores.shape[0]
         if num_users_evaluated <= 0:
             raise ValueError("TODO: fernando-debugger complete")
 
-        novelty_scores_train = metrics.nb_novelty_train(
-            urm_train=self.urm_train
-        )
+        novelty_scores_train = metrics.nb_novelty_train(urm_train=self.urm_train)
 
         df_mean_scores = df_scores.describe()
 
@@ -123,53 +114,86 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             (
                 coverage_item,
                 coverage_item_hit,
-
                 diversity_gini,
                 ratio_diversity_gini,
-
                 diversity_herfindahl,
                 ratio_diversity_herfindahl,
-
                 shannon_entropy,
                 ratio_shannon_entropy,
             ) = count_recommended_items_loop(
                 arr_count_recommended_items=dict_recommended_item_distribution[cutoff],
-                arr_count_relevant_recommended_items=dict_relevant_recommended_item_distribution[cutoff],
+                arr_count_relevant_recommended_items=dict_relevant_recommended_item_distribution[
+                    cutoff
+                ],
                 arr_item_ids_to_ignore=self.ignore_items_ID,
                 urm_train=self.urm_train,
             )
 
-            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_ITEM.value)]["mean"] = coverage_item
-            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_ITEM_HIT.value)]["mean"] = coverage_item_hit
+            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_ITEM.value)][
+                "mean"
+            ] = coverage_item
+            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_ITEM_HIT.value)][
+                "mean"
+            ] = coverage_item_hit
 
-            df_mean_scores[(cutoff, EvaluatorMetrics.DIVERSITY_GINI.value)]["mean"] = diversity_gini
-            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_DIVERSITY_GINI.value)]["mean"] = ratio_diversity_gini
+            df_mean_scores[(cutoff, EvaluatorMetrics.DIVERSITY_GINI.value)][
+                "mean"
+            ] = diversity_gini
+            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_DIVERSITY_GINI.value)][
+                "mean"
+            ] = ratio_diversity_gini
 
-            df_mean_scores[(cutoff, EvaluatorMetrics.DIVERSITY_HERFINDAHL.value)]["mean"] = diversity_herfindahl
-            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL.value)]["mean"] = ratio_diversity_herfindahl
+            df_mean_scores[(cutoff, EvaluatorMetrics.DIVERSITY_HERFINDAHL.value)][
+                "mean"
+            ] = diversity_herfindahl
+            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL.value)][
+                "mean"
+            ] = ratio_diversity_herfindahl
 
-            df_mean_scores[(cutoff, EvaluatorMetrics.SHANNON_ENTROPY.value)]["mean"] = shannon_entropy
-            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_SHANNON_ENTROPY.value)]["mean"] = ratio_shannon_entropy
+            df_mean_scores[(cutoff, EvaluatorMetrics.SHANNON_ENTROPY.value)][
+                "mean"
+            ] = shannon_entropy
+            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_SHANNON_ENTROPY.value)][
+                "mean"
+            ] = ratio_shannon_entropy
 
             # The original framework computes the F1 only on the mean precision and recall.
-            df_mean_scores[(cutoff, EvaluatorMetrics.F1.value)]["mean"] = metrics.nb_f1_score(
-                score_precision=df_mean_scores[(cutoff, EvaluatorMetrics.PRECISION.value)]["mean"],
-                score_recall=df_mean_scores[(cutoff, EvaluatorMetrics.RECALL.value)]["mean"],
+            df_mean_scores[(cutoff, EvaluatorMetrics.F1.value)][
+                "mean"
+            ] = metrics.nb_f1_score(
+                score_precision=df_mean_scores[
+                    (cutoff, EvaluatorMetrics.PRECISION.value)
+                ]["mean"],
+                score_recall=df_mean_scores[(cutoff, EvaluatorMetrics.RECALL.value)][
+                    "mean"
+                ],
             )
 
-            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_NOVELTY.value)]["mean"] = metrics.nb_ratio_recommendation_vs_train(
+            df_mean_scores[(cutoff, EvaluatorMetrics.RATIO_NOVELTY.value)][
+                "mean"
+            ] = metrics.nb_ratio_recommendation_vs_train(
                 metric_train=novelty_scores_train,
-                metric_recommendations=df_mean_scores[(cutoff, EvaluatorMetrics.NOVELTY.value)]["mean"],
+                metric_recommendations=df_mean_scores[
+                    (cutoff, EvaluatorMetrics.NOVELTY.value)
+                ]["mean"],
             )
 
-            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER.value)]["mean"] = metrics.nb_coverage_user_mean(
-                arr_user_mask=df_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER.value)].to_numpy(),
+            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER.value)][
+                "mean"
+            ] = metrics.nb_coverage_user_mean(
+                arr_user_mask=df_scores[
+                    (cutoff, EvaluatorMetrics.COVERAGE_USER.value)
+                ].to_numpy(),
                 arr_users_to_ignore=self.ignore_users_ID,
                 num_total_users=self.n_users,
             )
 
-            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER_HIT.value)]["mean"] = metrics.nb_coverage_user_mean(
-                arr_user_mask=df_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER_HIT.value)].to_numpy(),
+            df_mean_scores[(cutoff, EvaluatorMetrics.COVERAGE_USER_HIT.value)][
+                "mean"
+            ] = metrics.nb_coverage_user_mean(
+                arr_user_mask=df_scores[
+                    (cutoff, EvaluatorMetrics.COVERAGE_USER_HIT.value)
+                ].to_numpy(),
                 arr_users_to_ignore=self.ignore_users_ID,
                 num_total_users=self.n_users,
             )
@@ -189,7 +213,9 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
         for cutoff, metric in itertools.product(self._str_cutoffs, self._str_metrics):
             try:
-                dict_results[int(cutoff)][metric] = df_mean_scores[(cutoff, metric)]["mean"]
+                dict_results[int(cutoff)][metric] = df_mean_scores[(cutoff, metric)][
+                    "mean"
+                ]
             except Exception as e:
                 print(cutoff, metric, df_mean_scores, dict_results)
                 raise e
@@ -198,10 +224,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             data=dict_results,
             orient="index",
         )
-        df_results.index.rename(
-            name="cutoff",
-            inplace=True
-        )
+        df_results.index.rename(name="cutoff", inplace=True)
 
         results_run_string = get_result_string_df(df_results)
 
@@ -217,17 +240,22 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             folder_export_results, f"{recommender_name}_accuracy.parquet"
         )
         file_path_results_recommended_item_distribution = os.path.join(
-            folder_export_results, f"{recommender_name}_recommended_item_distribution.npz"
+            folder_export_results,
+            f"{recommender_name}_recommended_item_distribution.npz",
         )
         file_path_results_relevant_recommended_item_distribution = os.path.join(
-            folder_export_results, f"{recommender_name}_relevant_recommended_item_distribution.npz"
+            folder_export_results,
+            f"{recommender_name}_relevant_recommended_item_distribution.npz",
         )
 
-        if all(os.path.exists(f) for f in [
-            file_path_results_dataframe,
-            file_path_results_recommended_item_distribution,
-            file_path_results_relevant_recommended_item_distribution,
-        ]):
+        if all(
+            os.path.exists(f)
+            for f in [
+                file_path_results_dataframe,
+                file_path_results_recommended_item_distribution,
+                file_path_results_relevant_recommended_item_distribution,
+            ]
+        ):
             # If files exists, just load them from disk.
             df_results = self.load_parquet(
                 file_path=file_path_results_dataframe,
@@ -249,7 +277,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             (
                 df_results,
                 dict_recommended_item_distribution,
-                dict_relevant_recommended_item_distribution
+                dict_relevant_recommended_item_distribution,
             ) = self._evaluate_recommender(
                 recommender=recommender,
             )
@@ -266,7 +294,11 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 to_dict_func=lambda: dict_relevant_recommended_item_distribution,
             )
 
-        return df_results, dict_recommended_item_distribution, dict_relevant_recommended_item_distribution
+        return (
+            df_results,
+            dict_recommended_item_distribution,
+            dict_relevant_recommended_item_distribution,
+        )
 
     def _evaluate_recommender(
         self,
@@ -275,27 +307,25 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         assert self.urm_train.shape == self.URM_test.shape
 
         if self.ignore_items_flag:
-            recommender.set_items_to_ignore(
-                items_to_ignore=self.ignore_items_ID
-            )
+            recommender.set_items_to_ignore(items_to_ignore=self.ignore_items_ID)
 
         arr_user_ids = np.asarray(
             self.users_to_evaluate,
             dtype=np.int32,
         )
 
+        num_batches = 100 if arr_user_ids.size > 100 else 2
+
         arr_user_ids_batches = np.array_split(
             arr_user_ids,
-            indices_or_sections=100,
+            indices_or_sections=num_batches,  # 100
         )
 
         num_users, num_items = self.URM_test.shape
 
         list_df_results = []
 
-        logger.info(
-            f"Evaluating recommender."
-        )
+        logger.info(f"Evaluating recommender.")
 
         dict_cutoff_recommended_item_counters: dict[str, np.ndarray] = {
             cutoff: np.zeros(shape=(num_items,), dtype=np.int32)
@@ -344,9 +374,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                     arr_cutoff_novelty_score,
                     arr_cutoff_coverage_users,
                     arr_cutoff_coverage_users_hit,
-
                     arr_cutoff_position_first_relevant_item,
-
                     arr_count_recommended_items,
                     arr_count_relevant_recommended_items,
                 ) = evaluate_loop(
@@ -360,38 +388,75 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                     max_cutoff=self.max_cutoff,
                 )
 
-                df_results[(str(cutoff), EvaluatorMetrics.MAP.value)] = arr_cutoff_average_precision
-                df_results[(str(cutoff), EvaluatorMetrics.PRECISION.value)] = arr_cutoff_precision
-                df_results[(str(cutoff), EvaluatorMetrics.RECALL.value)] = arr_cutoff_recall
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.MAP.value)
+                ] = arr_cutoff_average_precision
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.PRECISION.value)
+                ] = arr_cutoff_precision
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.RECALL.value)
+                ] = arr_cutoff_recall
                 df_results[(str(cutoff), EvaluatorMetrics.NDCG.value)] = arr_cutoff_ndcg
                 df_results[(str(cutoff), EvaluatorMetrics.MRR.value)] = arr_cutoff_rr
-                df_results[(str(cutoff), EvaluatorMetrics.HIT_RATE.value)] = arr_cutoff_hit_rate
-                df_results[(str(cutoff), EvaluatorMetrics.ARHR.value)] = arr_cutoff_arhr_all_hits
-                df_results[(str(cutoff), EvaluatorMetrics.F1.value)] = arr_cutoff_f1_score
-                df_results[(str(cutoff), EvaluatorMetrics.NOVELTY.value)] = arr_cutoff_novelty_score
-                df_results[(str(cutoff), EvaluatorMetrics.COVERAGE_USER.value)] = arr_cutoff_coverage_users
-                df_results[(str(cutoff), EvaluatorMetrics.COVERAGE_USER_HIT.value)] = arr_cutoff_coverage_users_hit
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.HIT_RATE.value)
+                ] = arr_cutoff_hit_rate
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.ARHR.value)
+                ] = arr_cutoff_arhr_all_hits
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.F1.value)
+                ] = arr_cutoff_f1_score
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.NOVELTY.value)
+                ] = arr_cutoff_novelty_score
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.COVERAGE_USER.value)
+                ] = arr_cutoff_coverage_users
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.COVERAGE_USER_HIT.value)
+                ] = arr_cutoff_coverage_users_hit
 
                 # Diversity metrics only make sense when computed on all users, here we're only using a placeholder
                 # value.
-                df_results[(str(cutoff), EvaluatorMetrics.COVERAGE_ITEM.value)] = 0.
-                df_results[(str(cutoff), EvaluatorMetrics.COVERAGE_ITEM_HIT.value)] = 0.
+                df_results[(str(cutoff), EvaluatorMetrics.COVERAGE_ITEM.value)] = 0.0
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.COVERAGE_ITEM_HIT.value)
+                ] = 0.0
 
-                df_results[(str(cutoff), EvaluatorMetrics.RATIO_NOVELTY.value)] = 0.
+                df_results[(str(cutoff), EvaluatorMetrics.RATIO_NOVELTY.value)] = 0.0
 
-                df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_GINI.value)] = 0.
-                df_results[(str(cutoff), EvaluatorMetrics.RATIO_DIVERSITY_GINI.value)] = 0.
+                df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_GINI.value)] = 0.0
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.RATIO_DIVERSITY_GINI.value)
+                ] = 0.0
 
-                df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_HERFINDAHL.value)] = 0.
-                df_results[(str(cutoff), EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL.value)] = 0.
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.DIVERSITY_HERFINDAHL.value)
+                ] = 0.0
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL.value)
+                ] = 0.0
 
-                df_results[(str(cutoff), EvaluatorMetrics.SHANNON_ENTROPY.value)] = 0.
-                df_results[(str(cutoff), EvaluatorMetrics.RATIO_SHANNON_ENTROPY.value)] = 0.
+                df_results[(str(cutoff), EvaluatorMetrics.SHANNON_ENTROPY.value)] = 0.0
+                df_results[
+                    (str(cutoff), EvaluatorMetrics.RATIO_SHANNON_ENTROPY.value)
+                ] = 0.0
 
-                df_results[(str(cutoff), ExtendedEvaluatorMetrics.POSITION_FIRST_RELEVANT.value)] = arr_cutoff_position_first_relevant_item
+                df_results[
+                    (
+                        str(cutoff),
+                        ExtendedEvaluatorMetrics.POSITION_FIRST_RELEVANT.value,
+                    )
+                ] = arr_cutoff_position_first_relevant_item
 
-                dict_cutoff_recommended_item_counters[str(cutoff)] += arr_count_recommended_items
-                dict_cutoff_relevant_recommended_item_counters[str(cutoff)] += arr_count_relevant_recommended_items
+                dict_cutoff_recommended_item_counters[
+                    str(cutoff)
+                ] += arr_count_recommended_items
+                dict_cutoff_relevant_recommended_item_counters[
+                    str(cutoff)
+                ] += arr_count_relevant_recommended_items
 
             if self.ignore_items_flag:
                 recommender.reset_items_to_ignore()
@@ -403,7 +468,11 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             axis="index",
         )
 
-        return df_results, dict_cutoff_recommended_item_counters, dict_cutoff_relevant_recommended_item_counters
+        return (
+            df_results,
+            dict_cutoff_recommended_item_counters,
+            dict_cutoff_relevant_recommended_item_counters,
+        )
 
     def compute_recommenders_statistical_tests(
         self,
@@ -416,8 +485,14 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         folder_export_results: str,
     ) -> Sequence[pd.DataFrame]:
         file_paths = [
-            os.path.join(folder_export_results, f"{recommender_baseline_name}_groupwise_statistical_tests.parquet"),
-            os.path.join(folder_export_results, f"{recommender_baseline_name}_pairwise_statistical_tests.parquet"),
+            os.path.join(
+                folder_export_results,
+                f"{recommender_baseline_name}_groupwise_statistical_tests.parquet",
+            ),
+            os.path.join(
+                folder_export_results,
+                f"{recommender_baseline_name}_pairwise_statistical_tests.parquet",
+            ),
         ]
 
         partial_compute_recommenders_statistical_tests = partial(
@@ -463,7 +538,9 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 folder_export_results=recommender_folder,
             )[0]
             for recommender, recommender_name, recommender_folder in zip(
-                recommender_others, recommender_others_names, recommender_others_folders,
+                recommender_others,
+                recommender_others_names,
+                recommender_others_folders,
             )
         ]
 
@@ -480,10 +557,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             st_tests.StatisticalTestAlternative.LESS,
             st_tests.StatisticalTestAlternative.GREATER,
         ]
-        str_alternatives = [
-            alternative.value
-            for alternative in alternatives
-        ]
+        str_alternatives = [alternative.value for alternative in alternatives]
         alphas = [
             0.1,
             0.05,
@@ -493,32 +567,38 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
         columns_groupwise = [("recommender", "", "", "", "", "")]
         columns_groupwise += itertools.product(
-            self._str_cutoffs, self._str_metrics, stats_groupwise, str_alternatives, str_alphas, inner_stats_groupwise,
+            self._str_cutoffs,
+            self._str_metrics,
+            stats_groupwise,
+            str_alternatives,
+            str_alphas,
+            inner_stats_groupwise,
         )
 
-        columns_pairwise = [("recommender_base", "", "", "", "", ""), ("recommender_other", "", "", "", "", "")]
+        columns_pairwise = [
+            ("recommender_base", "", "", "", "", ""),
+            ("recommender_other", "", "", "", "", ""),
+        ]
         columns_pairwise += itertools.product(
-            self._str_cutoffs, self._str_metrics, stats_pairwise, str_alternatives, str_alphas, inner_stats_pairwise
+            self._str_cutoffs,
+            self._str_metrics,
+            stats_pairwise,
+            str_alternatives,
+            str_alphas,
+            inner_stats_pairwise,
         )
 
-        data_groupwise: dict[tuple, list] = {
-            col: []
-            for col in columns_groupwise
-        }
+        data_groupwise: dict[tuple, list] = {col: [] for col in columns_groupwise}
         data_groupwise[("recommender", "", "", "", "", "")].append(
             recommender_baseline_name
         )
 
-        data_pairwise: dict[tuple, list] = {
-            col: []
-            for col in columns_pairwise
-        }
+        data_pairwise: dict[tuple, list] = {col: [] for col in columns_pairwise}
         data_pairwise[("recommender_base", "", "", "", "", "")] += [
             recommender_baseline_name
         ] * num_other_recommenders
         data_pairwise[("recommender_other", "", "", "", "", "")] += [
-            rec_name
-            for rec_name in recommender_others_names
+            rec_name for rec_name in recommender_others_names
         ]
 
         for cutoff, metric in itertools.product(self._str_cutoffs, self._str_metrics):
@@ -535,71 +615,194 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             )
 
             for alternative in alternatives:
-                results_statistical_tests = st_tests.compute_statistical_tests_of_base_vs_others(
-                    scores_base=arr_scores_baseline,
-                    scores_others=arr_scores_others,
-                    alphas=alphas,
-                    alternative=alternative,
+                results_statistical_tests = (
+                    st_tests.compute_statistical_tests_of_base_vs_others(
+                        scores_base=arr_scores_baseline,
+                        scores_others=arr_scores_others,
+                        alphas=alphas,
+                        alternative=alternative,
+                    )
                 )
 
                 for idx, alpha in enumerate(alphas):
-                    data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "alpha")].append(
-                        alpha
-                    )
-                    data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "p_value")].append(
-                        results_statistical_tests.friedman.p_value
-                    )
-                    data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "hypothesis")].append(
-                        results_statistical_tests.friedman.hypothesis[idx].value
-                    )
-                    data_groupwise[(cutoff, metric, "friedman", alternative.value, str(alpha), "num_measurements")].append(
-                        results_statistical_tests.friedman.num_measurements
-                    )
+                    data_groupwise[
+                        (
+                            cutoff,
+                            metric,
+                            "friedman",
+                            alternative.value,
+                            str(alpha),
+                            "alpha",
+                        )
+                    ].append(alpha)
+                    data_groupwise[
+                        (
+                            cutoff,
+                            metric,
+                            "friedman",
+                            alternative.value,
+                            str(alpha),
+                            "p_value",
+                        )
+                    ].append(results_statistical_tests.friedman.p_value)
+                    data_groupwise[
+                        (
+                            cutoff,
+                            metric,
+                            "friedman",
+                            alternative.value,
+                            str(alpha),
+                            "hypothesis",
+                        )
+                    ].append(results_statistical_tests.friedman.hypothesis[idx].value)
+                    data_groupwise[
+                        (
+                            cutoff,
+                            metric,
+                            "friedman",
+                            alternative.value,
+                            str(alpha),
+                            "num_measurements",
+                        )
+                    ].append(results_statistical_tests.friedman.num_measurements)
 
-                    data_pairwise[(cutoff, metric, "wilcoxon", alternative.value, str(alpha), "alpha")] += [
-                        alpha
-                    ] * num_other_recommenders
-                    data_pairwise[(cutoff, metric, "wilcoxon", alternative.value, str(alpha), "p_value")] += [
-                        res.p_value
-                        for res in results_statistical_tests.wilcoxon
-                    ]
-                    data_pairwise[(cutoff, metric, "wilcoxon", alternative.value, str(alpha), "hypothesis")] += [
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "wilcoxon",
+                            alternative.value,
+                            str(alpha),
+                            "alpha",
+                        )
+                    ] += [alpha] * num_other_recommenders
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "wilcoxon",
+                            alternative.value,
+                            str(alpha),
+                            "p_value",
+                        )
+                    ] += [res.p_value for res in results_statistical_tests.wilcoxon]
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "wilcoxon",
+                            alternative.value,
+                            str(alpha),
+                            "hypothesis",
+                        )
+                    ] += [
                         res.hypothesis[idx].value
                         for res in results_statistical_tests.wilcoxon
                     ]
 
-                    data_pairwise[(cutoff, metric, "sign", alternative.value, str(alpha), "alpha")] += [
-                        alpha
-                    ] * num_other_recommenders
-                    data_pairwise[(cutoff, metric, "sign", alternative.value, str(alpha), "p_value")] += [
-                        res.p_value
-                        for res in results_statistical_tests.sign
-                    ]
-                    data_pairwise[(cutoff, metric, "sign", alternative.value, str(alpha), "hypothesis")] += [
+                    data_pairwise[
+                        (cutoff, metric, "sign", alternative.value, str(alpha), "alpha")
+                    ] += [alpha] * num_other_recommenders
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "sign",
+                            alternative.value,
+                            str(alpha),
+                            "p_value",
+                        )
+                    ] += [res.p_value for res in results_statistical_tests.sign]
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "sign",
+                            alternative.value,
+                            str(alpha),
+                            "hypothesis",
+                        )
+                    ] += [
                         res.hypothesis[idx].value
                         for res in results_statistical_tests.sign
                     ]
 
-                    data_pairwise[(cutoff, metric, "bonferroni-wilcoxon", alternative.value, str(alpha), "alpha")] += [
-                        results_statistical_tests.bonferroni_wilcoxon.corrected_alphas[idx]
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-wilcoxon",
+                            alternative.value,
+                            str(alpha),
+                            "alpha",
+                        )
+                    ] += [
+                        results_statistical_tests.bonferroni_wilcoxon.corrected_alphas[
+                            idx
+                        ]
                     ] * num_other_recommenders
-                    data_pairwise[(cutoff, metric, "bonferroni-wilcoxon", alternative.value, str(alpha), "p_value")] += [
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-wilcoxon",
+                            alternative.value,
+                            str(alpha),
+                            "p_value",
+                        )
+                    ] += [
                         p_val
                         for p_val in results_statistical_tests.bonferroni_wilcoxon.corrected_p_values
                     ]
-                    data_pairwise[(cutoff, metric, "bonferroni-wilcoxon", alternative.value, str(alpha), "hypothesis")] += [
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-wilcoxon",
+                            alternative.value,
+                            str(alpha),
+                            "hypothesis",
+                        )
+                    ] += [
                         h[idx].value
                         for h in results_statistical_tests.bonferroni_wilcoxon.hypothesis
                     ]
 
-                    data_pairwise[(cutoff, metric, "bonferroni-sign", alternative.value, str(alpha), "alpha")] += [
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-sign",
+                            alternative.value,
+                            str(alpha),
+                            "alpha",
+                        )
+                    ] += [
                         results_statistical_tests.bonferroni_sign.corrected_alphas[idx]
                     ] * num_other_recommenders
-                    data_pairwise[(cutoff, metric, "bonferroni-sign", alternative.value, str(alpha), "p_value")] += [
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-sign",
+                            alternative.value,
+                            str(alpha),
+                            "p_value",
+                        )
+                    ] += [
                         p_val
                         for p_val in results_statistical_tests.bonferroni_sign.corrected_p_values
                     ]
-                    data_pairwise[(cutoff, metric, "bonferroni-sign", alternative.value, str(alpha), "hypothesis")] += [
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-sign",
+                            alternative.value,
+                            str(alpha),
+                            "hypothesis",
+                        )
+                    ] += [
                         h[idx].value
                         for h in results_statistical_tests.bonferroni_sign.hypothesis
                     ]
@@ -618,7 +821,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         )
 
         return [
-            df_results_groupwise, df_results_pairwise,
+            df_results_groupwise,
+            df_results_pairwise,
         ]
 
     def compute_recommender_confidence_intervals(
@@ -671,12 +875,11 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         columns = [("recommender", "", "", "", "")]
         for cutoff, metric in itertools.product(cutoffs, metrics):
             columns += itertools.product([cutoff], [metric], stats, [""], [""])
-            columns += itertools.product([cutoff], [metric], algorithms, str_p_values, ci_values)
+            columns += itertools.product(
+                [cutoff], [metric], algorithms, str_p_values, ci_values
+            )
 
-        data: dict[tuple, list] = {
-            col: []
-            for col in columns
-        }
+        data: dict[tuple, list] = {col: [] for col in columns}
         data[("recommender", "", "", "", "")].append(recommender_name)
         for cutoff, metric in itertools.product(self._str_cutoffs, self._str_metrics):
             scores = df_scores[(cutoff, metric)].to_numpy(dtype=np.float64)
@@ -686,14 +889,22 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             data[(cutoff, metric, "var", "", "")].append(scores.var(dtype=np.float64))
 
             for p_value in p_values:
-                recommender_confidence_intervals = st_tests.calculate_confidence_intervals_on_scores_mean(
-                    scores=scores,
-                    alpha=p_value,
+                recommender_confidence_intervals = (
+                    st_tests.calculate_confidence_intervals_on_scores_mean(
+                        scores=scores,
+                        alpha=p_value,
+                    )
                 )
 
-                for computed_ci in recommender_confidence_intervals.confidence_intervals:
-                    data[(cutoff, metric, computed_ci.algorithm, str(p_value), "lower")].append(computed_ci.lower)
-                    data[(cutoff, metric, computed_ci.algorithm, str(p_value), "upper")].append(computed_ci.upper)
+                for (
+                    computed_ci
+                ) in recommender_confidence_intervals.confidence_intervals:
+                    data[
+                        (cutoff, metric, computed_ci.algorithm, str(p_value), "lower")
+                    ].append(computed_ci.lower)
+                    data[
+                        (cutoff, metric, computed_ci.algorithm, str(p_value), "upper")
+                    ].append(computed_ci.upper)
 
         mi_columns = pd.MultiIndex.from_tuples(columns)
 
@@ -703,15 +914,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         )
         return df_results
 
-    def _create_empty_results_dict(
-        self
-    ) -> dict[int, dict[str, float]]:
+    def _create_empty_results_dict(self) -> dict[int, dict[str, float]]:
         return {
-            cutoff: {
-                metric: 0.
-                for metric in self._str_metrics
-            }
+            cutoff: {metric: 0.0 for metric in self._str_metrics}
             for cutoff in self.cutoff_list
         }
-
-

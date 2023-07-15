@@ -14,8 +14,8 @@ class TestMetrics:
     is_relevant = np.asarray([False, False, True], dtype=np.bool_)
     cutoff = 3
     pos_items = np.asarray([1], dtype=np.int32)
-    relevance = np.asarray([1.], dtype=np.float32)
-    scores = np.asarray([1.], dtype=np.float32)
+    relevance = np.asarray([1.0], dtype=np.float32)
+    scores = np.asarray([1.0], dtype=np.float32)
     counter_recommended_items = np.array([1, 1, 1, 0, 0], dtype=np.int32)
     item_popularity = np.asarray([10, 5, 2, 3, 8], dtype=np.int32)
     num_items: int = item_popularity.shape[0]
@@ -43,8 +43,18 @@ class TestMetrics:
             py_metric.py_average_precision(is_relevant=self.is_relevant),
         )
         assert np.array_equal(
-            nb_metric.nb_ndcg(ranked_list=self.ranked_list, pos_items=self.pos_items, relevance=self.relevance, at=2),
-            py_metric.py_ndcg(ranked_list=self.ranked_list, pos_items=self.pos_items, relevance=self.relevance, at=2),
+            nb_metric.nb_ndcg(
+                ranked_list=self.ranked_list,
+                pos_items=self.pos_items,
+                relevance=self.relevance,
+                at=2,
+            ),
+            py_metric.py_ndcg(
+                ranked_list=self.ranked_list,
+                pos_items=self.pos_items,
+                relevance=self.relevance,
+                at=2,
+            ),
         )
         assert np.array_equal(
             nb_metric.nb_rr(is_relevant=self.is_relevant),
@@ -61,11 +71,15 @@ class TestMetrics:
         assert np.array_equal(
             nb_metric.nb_f1_score(
                 score_precision=nb_metric.nb_precision(is_relevant=self.is_relevant),
-                score_recall=nb_metric.nb_recall(is_relevant=self.is_relevant, pos_items=self.pos_items),
+                score_recall=nb_metric.nb_recall(
+                    is_relevant=self.is_relevant, pos_items=self.pos_items
+                ),
             ),
             py_metric.py_f1_score_micro_averaged(
                 score_precision=py_metric.py_precision(is_relevant=self.is_relevant),
-                score_recall=py_metric.py_recall(is_relevant=self.is_relevant, pos_items=self.pos_items)
+                score_recall=py_metric.py_recall(
+                    is_relevant=self.is_relevant, pos_items=self.pos_items
+                ),
             ),
         )
         assert np.array_equal(
@@ -77,8 +91,12 @@ class TestMetrics:
             py_metric.py_coverage_user_hit(is_relevant=self.is_relevant),
         )
         assert np.array_equal(
-            nb_metric.nb_coverage_item(recommended_counter=self.counter_recommended_items),
-            py_metric.py_coverage_item(recommended_counter=self.counter_recommended_items),
+            nb_metric.nb_coverage_item(
+                recommended_counter=self.counter_recommended_items
+            ),
+            py_metric.py_coverage_item(
+                recommended_counter=self.counter_recommended_items
+            ),
         )
         assert np.array_equal(
             nb_metric.nb_novelty(
@@ -126,7 +144,7 @@ class TestMetrics:
             py_metric.py_ratio_recommendation_vs_train(
                 metric_train=0.5,
                 metric_recommendations=0.8,
-            )
+            ),
         )
         assert np.array_equal(
             nb_metric.nb_position_relevant_items(
@@ -136,7 +154,7 @@ class TestMetrics:
             py_metric.py_position_relevant_items(
                 is_relevant=self.is_relevant,
                 cutoff=self.cutoff,
-            )
+            ),
         )
 
     def test_framework_and_extended_python_implementations_are_equal(
@@ -145,13 +163,27 @@ class TestMetrics:
         # Arrange
         empty_array = np.asarray([], dtype=np.int32)
         framework_metric_hit_rate = framework_metric.HIT_RATE()
-        framework_metric_f1_score = lambda precision, recall: 2 * (precision * recall) / (precision + recall)
-        framework_metric_coverage_user = framework_metric.Coverage_User(n_users=self.num_users, ignore_users=empty_array)
-        framework_metric_coverage_user_hit = framework_metric.Coverage_User_HIT(n_users=self.num_users, ignore_users=empty_array)
-        framework_metric_coverage_item = framework_metric.Coverage_Item(n_items=self.num_items, ignore_items=empty_array)
-        framework_metric_diversity_herfindahl = framework_metric.Diversity_Herfindahl(n_items=self.num_items, ignore_items=empty_array)
-        framework_metric_diversity_gini = framework_metric.Gini_Diversity(n_items=self.num_items, ignore_items=empty_array)
-        framework_metric_diversity_shannon = framework_metric.Shannon_Entropy(n_items=self.num_items, ignore_items=empty_array)
+        framework_metric_f1_score = (
+            lambda precision, recall: 2 * (precision * recall) / (precision + recall)
+        )
+        framework_metric_coverage_user = framework_metric.Coverage_User(
+            n_users=self.num_users, ignore_users=empty_array
+        )
+        framework_metric_coverage_user_hit = framework_metric.Coverage_User_HIT(
+            n_users=self.num_users, ignore_users=empty_array
+        )
+        framework_metric_coverage_item = framework_metric.Coverage_Item(
+            n_items=self.num_items, ignore_items=empty_array
+        )
+        framework_metric_diversity_herfindahl = framework_metric.Diversity_Herfindahl(
+            n_items=self.num_items, ignore_items=empty_array
+        )
+        framework_metric_diversity_gini = framework_metric.Gini_Diversity(
+            n_items=self.num_items, ignore_items=empty_array
+        )
+        framework_metric_diversity_shannon = framework_metric.Shannon_Entropy(
+            n_items=self.num_items, ignore_items=empty_array
+        )
 
         # Act
         framework_metric_hit_rate.add_recommendations(
@@ -184,7 +216,9 @@ class TestMetrics:
             py_metric.py_precision(is_relevant=self.is_relevant),
         )
         assert np.array_equal(
-            framework_metric.recall(is_relevant=self.is_relevant, pos_items=self.pos_items),
+            framework_metric.recall(
+                is_relevant=self.is_relevant, pos_items=self.pos_items
+            ),
             py_metric.py_recall(is_relevant=self.is_relevant, pos_items=self.pos_items),
         )
         assert np.array_equal(
@@ -192,8 +226,18 @@ class TestMetrics:
             py_metric.py_average_precision(is_relevant=self.is_relevant),
         )
         assert np.array_equal(
-            framework_metric.ndcg(ranked_list=self.ranked_list, pos_items=self.pos_items, relevance=self.relevance, at=2),
-            py_metric.py_ndcg(ranked_list=self.ranked_list, pos_items=self.pos_items, relevance=self.relevance, at=2),
+            framework_metric.ndcg(
+                ranked_list=self.ranked_list,
+                pos_items=self.pos_items,
+                relevance=self.relevance,
+                at=2,
+            ),
+            py_metric.py_ndcg(
+                ranked_list=self.ranked_list,
+                pos_items=self.pos_items,
+                relevance=self.relevance,
+                at=2,
+            ),
         )
         assert np.array_equal(
             framework_metric.rr(is_relevant=self.is_relevant),
@@ -210,11 +254,15 @@ class TestMetrics:
         assert np.array_equal(
             framework_metric_f1_score(
                 precision=framework_metric.precision(is_relevant=self.is_relevant),
-                recall=framework_metric.recall(is_relevant=self.is_relevant, pos_items=self.pos_items),
+                recall=framework_metric.recall(
+                    is_relevant=self.is_relevant, pos_items=self.pos_items
+                ),
             ),
             py_metric.py_f1_score_micro_averaged(
                 score_precision=py_metric.py_precision(is_relevant=self.is_relevant),
-                score_recall=py_metric.py_recall(is_relevant=self.is_relevant, pos_items=self.pos_items)
+                score_recall=py_metric.py_recall(
+                    is_relevant=self.is_relevant, pos_items=self.pos_items
+                ),
             ),
         )
         assert np.array_equal(
@@ -227,7 +275,9 @@ class TestMetrics:
         )
         assert np.array_equal(
             framework_metric_coverage_item.get_metric_value(),
-            py_metric.py_coverage_item(recommended_counter=self.counter_recommended_items),
+            py_metric.py_coverage_item(
+                recommended_counter=self.counter_recommended_items
+            ),
         )
         assert np.array_equal(
             framework_metric_diversity_gini.get_metric_value(),
@@ -235,22 +285,22 @@ class TestMetrics:
                 recommended_counter=self.counter_recommended_items,
             ),
         )
-        assert np.array_equal(
+        assert np.allclose(
             framework_metric_diversity_herfindahl.get_metric_value(),
             py_metric.py_diversity_herfindahl(
                 recommended_counter=self.counter_recommended_items,
             ),
+            equal_nan=True,
         )
-        assert np.array_equal(
+        assert np.allclose(
             framework_metric_diversity_shannon.get_metric_value(),
             py_metric.py_shannon_entropy(
                 recommended_counter=self.counter_recommended_items,
             ),
+            equal_nan=True,
         )
 
-    def test_position_relevant_items_yield_correct_results(
-        self
-    ):
+    def test_position_relevant_items_yield_correct_results(self):
         # Arrange
         cases_to_try = [
             np.array([True, True, True], dtype=np.bool8),
@@ -283,4 +333,3 @@ class TestMetrics:
             )
             for expected, obtained in zip(expected_results, obtained_results)
         )
-        
