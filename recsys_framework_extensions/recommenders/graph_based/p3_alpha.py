@@ -1,0 +1,234 @@
+import sys
+import time
+
+import attrs
+import numpy as np
+import scipy.sparse as sp
+import sklearn
+from Recommenders.BaseSimilarityMatrixRecommender import (
+    BaseItemSimilarityMatrixRecommender,
+)
+from Recommenders.Recommender_utils import similarityMatrixTopK, check_matrix
+from Recommenders.Similarity.Compute_Similarity_Python import (
+    Incremental_Similarity_Builder,
+)
+from Utils.seconds_to_biggest_unit import seconds_to_biggest_unit
+from skopt.space import Integer, Real, Categorical
+
+from recsys_framework_extensions.recommenders.base import (
+    SearchHyperParametersBaseRecommender,
+)
+
+
+@attrs.define(kw_only=True, frozen=True, slots=False)
+class SearchHyperParametersP3AlphaRecommender(SearchHyperParametersBaseRecommender):
+    top_k: Integer = attrs.field(
+        default=Integer(
+            low=5,
+            high=1000,
+            prior="uniform",
+            base=10,
+        )
+    )
+    alpha: Real = attrs.field(
+        default=Real(
+            low=0,
+            high=2,
+            prior="uniform",
+            base=10,
+        )
+    )
+    normalize_similarity: Real = attrs.field(
+        default=Categorical(
+            [True, False],
+        ),
+    )
+
+
+def create_pui_and_piu(
+    urm_train: sp.csr_matrix,
+    alpha: float,
+) -> tuple[sp.csr_matrix, sp.csr_matrix]:
+    # Pui is the row-normalized urm
+    Pui = sklearn.preprocessing.normalize(
+        urm_train,
+        norm="l1",
+        axis=1,
+    )
+
+    # Piu is the column-normalized, "boolean" urm transposed
+    X_bool = urm_train.transpose(
+        copy=True,
+    )
+    X_bool.data = np.ones(
+        X_bool.data.size,
+        dtype=np.float32,
+    )
+    # ATTENTION: axis is still 1 because i transposed before the normalization
+    Piu = sklearn.preprocessing.normalize(
+        X_bool,
+        norm="l1",
+        axis=1,
+    )
+
+    # Alfa power
+    if alpha != 1.0:
+        Pui = Pui.power(alpha)
+        Piu = Piu.power(alpha)
+
+    return Pui, Piu
+
+
+class ExtendedP3AlphaRecommender(BaseItemSimilarityMatrixRecommender):
+    RECOMMENDER_NAME = "ExtendedP3AlphaRecommender"
+
+    def __init__(
+        self,
+        urm_train: sp.csr_matrix,
+        verbose: bool = False,
+        **kwargs,
+    ):
+        super().__init__(
+            URM_train=urm_train,
+            verbose=verbose,
+        )
+        self.urm_train = urm_train
+        self.p_ui = sp.csr_matrix(
+            (self.n_users + self.n_items, self.n_users + self.n_items),
+            dtype=np.int32,
+        )
+        self.p_iu = sp.csr_matrix(
+            (self.n_users + self.n_items, self.n_users + self.n_items),
+            dtype=np.int32,
+        )
+
+        self.W_sparse: sp.csr_matrix = sp.csr_matrix(
+            (self.n_items, self.n_items),
+            dtype=np.float32,
+        )
+
+        self.alpha: float = 1.0
+        self.top_k: int = 100
+        self.normalize_similarity: bool = False
+
+    def __str__(
+        self,
+    ) -> str:
+        return (
+            f"ExtendedP3Alpha("
+            f"alpha={self.alpha}, "
+            f"top_k={self.top_k}, "
+            f"normalize_similarity={self.normalize_similarity}"
+            f")"
+        )
+
+    def create_similarity_matrix(
+        self,
+    ):
+        # Final matrix is computed as self.p_ui * Piu * self.p_ui
+        # Multiplication unpacked for memory usage reasons
+        block_dim = 200
+        d_t = self.p_iu
+
+        similarity_builder = Incremental_Similarity_Builder(
+            self.p_ui.shape[1],
+            initial_data_block=self.p_ui.shape[1] * self.top_k,
+            dtype=np.float32,
+        )
+
+        start_time = time.time()
+        start_time_print_batch = start_time
+
+        for current_block_start_row in range(0, self.p_ui.shape[1], block_dim):
+            if current_block_start_row + block_dim > self.p_ui.shape[1]:
+                block_dim = self.p_ui.shape[1] - current_block_start_row
+
+            similarity_block = (
+                d_t[current_block_start_row : current_block_start_row + block_dim, :]
+                * self.p_ui
+            )
+            similarity_block = similarity_block.toarray()
+
+            for row_in_block in range(block_dim):
+                row_data = similarity_block[row_in_block, :]
+                row_data[current_block_start_row + row_in_block] = 0
+
+                relevant_items_partition = np.argpartition(
+                    -row_data,
+                    self.top_k - 1,
+                    axis=0,
+                )[: self.top_k]
+                row_data = row_data[relevant_items_partition]
+
+                # Incrementally build sparse matrix, do not add zeros
+                if np.any(row_data == 0.0):
+                    non_zero_mask = row_data != 0.0
+                    relevant_items_partition = relevant_items_partition[non_zero_mask]
+                    row_data = row_data[non_zero_mask]
+
+                similarity_builder.add_data_lists(
+                    row_list_to_add=np.ones(len(row_data), dtype=np.int32)
+                    * (current_block_start_row + row_in_block),
+                    col_list_to_add=relevant_items_partition,
+                    data_list_to_add=row_data,
+                )
+
+            if (
+                time.time() - start_time_print_batch > 300
+                or current_block_start_row + block_dim == self.p_ui.shape[1]
+            ):
+                new_time_value, new_time_unit = seconds_to_biggest_unit(
+                    time.time() - start_time
+                )
+
+                self._print(
+                    f"Similarity column {current_block_start_row + block_dim} "
+                    f"({100.0 * float(current_block_start_row + block_dim) / self.p_ui.shape[1]:4.1f}%), "
+                    f"{float(current_block_start_row + block_dim) / (time.time() - start_time):.2f} "
+                    f"column/sec. "
+                    f"Elapsed time {new_time_value:.2f} {new_time_unit}"
+                )
+
+                sys.stdout.flush()
+                sys.stderr.flush()
+
+                start_time_print_batch = time.time()
+
+        w_sparse = similarity_builder.get_SparseMatrix()
+
+        if self.normalize_similarity:
+            w_sparse = sklearn.preprocessing.normalize(
+                w_sparse,
+                norm="l1",
+                axis=1,
+            )
+
+        if self.top_k:
+            w_sparse = similarityMatrixTopK(
+                w_sparse,
+                k=self.top_k,
+            )
+
+        self.W_sparse = check_matrix(
+            w_sparse,
+            format="csr",
+        )
+
+    def fit(
+        self,
+        *,
+        top_k: int = 100,
+        alpha: float = 1.0,
+        normalize_similarity: bool = False,
+        **kwargs,
+    ) -> None:
+        self.top_k = top_k
+        self.alpha = alpha
+        self.normalize_similarity = normalize_similarity
+
+        self.p_ui, self.p_iu = create_pui_and_piu(
+            urm_train=self.urm_train,
+            alpha=self.alpha,
+        )
+
+        self.create_similarity_matrix()
