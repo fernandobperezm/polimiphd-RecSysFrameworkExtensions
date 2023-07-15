@@ -45,6 +45,7 @@ mypy = "^1.4.1"
 types-toml = "^0.10.8.6"
 pytest = "^7.4.0"
 Faker = "^18.11.2"
+black = {extras = ["d"], version = "^23.7.0"}
 
 [tool.poetry.build]
 generate-setup-file = true
