@@ -22,6 +22,10 @@ from recsys_framework_extensions.recommenders.base import (
 from skopt.space import Integer, Categorical, Real
 from tqdm import tqdm
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 @attrs.define(kw_only=True, frozen=True, slots=False)
 class SearchHyperParametersLightGCNRecommender(SearchHyperParametersBaseRecommender):
@@ -328,10 +332,13 @@ class ExtendedLightGCNRecommender(
         )
 
         if use_gpu:
+            logger.debug(f"REQUIRED GPU")
             assert torch.cuda.is_available(), "GPU is requested but not available"
+            logger.debug(f"REQUIRED GPU - USING CUDA:0")
             self.device = torch.device("cuda:0")
             torch.cuda.empty_cache()
         else:
+            logger.debug(f"REQUIRED CPU - USING CPU:0")
             self.device = torch.device("cpu:0")
 
     def fit(
