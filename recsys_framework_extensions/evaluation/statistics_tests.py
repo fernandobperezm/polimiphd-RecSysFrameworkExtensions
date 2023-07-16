@@ -1,3 +1,4 @@
+from collections import namedtuple
 from enum import Enum
 from typing import Optional, Sequence, Iterable, Mapping
 
@@ -7,6 +8,8 @@ import statsmodels.api as sm
 from scipy import stats
 
 import logging
+
+from scipy.stats._binomtest import BinomTestResult  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +118,6 @@ def _get_final_hypothesis(
         StatisticalTestHypothesis.ALTERNATIVE
         if p_value <= alpha
         else StatisticalTestHypothesis.NULL
-
         for alpha in alphas
     ]
 
@@ -180,17 +182,11 @@ def compute_statistical_tests_of_base_vs_others(
     ]
 
     p_values_wilcoxon = np.asarray(
-        [
-            res.p_value
-            for res in results_wilcoxon
-        ],
+        [res.p_value for res in results_wilcoxon],
         dtype=np.float64,
     )
     p_values_sign = np.asarray(
-        [
-            res.p_value
-            for res in results_sign
-        ],
+        [res.p_value for res in results_sign],
         dtype=np.float64,
     )
 
@@ -283,7 +279,7 @@ def _wilcoxon_statistic_test(
         kwargs=dict(
             alternative=alternative,
             alphas=alphas,
-        )
+        ),
     )
 
 
@@ -333,9 +329,7 @@ def _cochrans_q_statistic_test(
         assert len(scores_recommender_1.shape) == 1
         assert scores_recommender_1.shape == scores_recommender_2.shape
 
-        scores = np.vstack(
-            (scores_recommender_1, scores_recommender_2)
-        ).transpose()
+        scores = np.vstack((scores_recommender_1, scores_recommender_2)).transpose()
 
     assert scores.shape == (num_users, num_recommenders)
     assert len(np.unique(scores)) == 2
@@ -382,9 +376,7 @@ def _friedman_chi_square_statistical_test(
     # Passing a numpy array as *array sends the function each row as a separate argument. Hence, in this case,
     # we are complying with what the function expects, as the `scores` array is a MxN array, where M is the number of
     # recommenders. *scores passes each row (each recommender score) as an argument.
-    test_statistic, p_value = stats.friedmanchisquare(
-        *scores
-    )
+    test_statistic, p_value = stats.friedmanchisquare(*scores)
 
     hypothesis = _get_final_hypothesis(
         p_value=p_value,
@@ -399,7 +391,7 @@ def _friedman_chi_square_statistical_test(
         hypothesis=hypothesis,
         kwargs=dict(
             alphas=alphas,
-        )
+        ),
     )
 
 
@@ -505,28 +497,31 @@ def _sign_test(
 
     num_users = scores_base.shape[0]
 
-    num_times_base_better_than_other = np.sum(
+    num_times_base_better_than_other: int = np.sum(
         scores_base > scores_other,
+        dtype=np.int32,
     )
 
-    num_times_other_better_than_base = np.sum(
+    num_times_other_better_than_base: int = np.sum(
         scores_base < scores_other,
+        dtype=np.int32,
     )
 
-    num_times_both_are_equal = np.sum(
+    num_times_both_are_equal: int = np.sum(
         scores_base == scores_other,
+        dtype=np.int32,
     )
 
-    successes = num_times_other_better_than_base + num_times_both_are_equal // 2
-    failures = num_times_base_better_than_other + num_times_both_are_equal // 2
+    successes: int = num_times_other_better_than_base + num_times_both_are_equal // 2
+    failures: int = num_times_base_better_than_other + num_times_both_are_equal // 2
 
     assert (
         num_times_both_are_equal % 2 == 0 and successes + failures == num_users
-    ) or (
-        num_times_both_are_equal % 2 == 1 and successes + failures + 1 == num_users
-    )
+    ) or (num_times_both_are_equal % 2 == 1 and successes + failures + 1 == num_users)
     assert (
-        num_times_base_better_than_other + num_times_other_better_than_base + num_times_both_are_equal
+        num_times_base_better_than_other
+        + num_times_other_better_than_base
+        + num_times_both_are_equal
     ) == num_users
 
     # From v1.8.1 we can use binomtest that returns a set of more comprehensive results.
@@ -536,11 +531,17 @@ def _sign_test(
     # In particular, both recommenders are considered to win in 50% of the cases.
     # Ties are not discounted but added between the successes and failures, if the num of ties is odd,
     # then 1 is substracted.
-    p_value = stats.binom_test(
-        x=[successes, failures],
+    result_binom_test: BinomTestResult = stats.binomtest(
+        k=successes,
         n=num_users,
         p=0.5,
         alternative=alternative.value,
+    )
+    p_value: float = result_binom_test.pvalue
+    statistic: float = result_binom_test.statistic
+    confidence_interval = result_binom_test.proportion_ci(
+        confidence_level=0.95,
+        method="exact",
     )
 
     hypothesis = _get_final_hypothesis(
@@ -559,7 +560,9 @@ def _sign_test(
         kwargs=dict(
             alphas=alphas,
             alternative=alternative,
-        )
+            statistic=statistic,
+            confidence_interval=confidence_interval,
+        ),
     )
 
 
@@ -588,9 +591,13 @@ def _bonferroni_correction(
     assert p_values.ndim == 1
 
     num_experiments = float(len(p_values))
-    corrected_alphas: np.ndarray = np.asarray(alphas).astype(dtype=np.float64) / num_experiments
-    corrected_p_values: np.ndarray = np.asarray(p_values).astype(dtype=np.float64) * num_experiments
-    corrected_p_values[corrected_p_values > 1.] = 1.
+    corrected_alphas: np.ndarray = (
+        np.asarray(alphas).astype(dtype=np.float64) / num_experiments
+    )
+    corrected_p_values: np.ndarray = (
+        np.asarray(p_values).astype(dtype=np.float64) * num_experiments
+    )
+    corrected_p_values[corrected_p_values > 1.0] = 1.0
 
     hypothesis = [
         _get_final_hypothesis(
@@ -607,7 +614,7 @@ def _bonferroni_correction(
         kwargs=dict(
             p_values=p_values,
             alphas=alphas,
-        )
+        ),
     )
 
 
@@ -629,7 +636,7 @@ def calculate_confidence_intervals_on_scores_mean(
 
     """
     assert scores.ndim == 1
-    assert alpha is None or (0. <= alpha <= 1.)
+    assert alpha is None or (0.0 <= alpha <= 1.0)
 
     if alpha is None:
         alpha = _DEFAULT_ALPHA
@@ -668,7 +675,7 @@ def calculate_confidence_intervals_on_scores_mean(
                 lower=normal_ci_lower,
                 upper=normal_ci_upper,
             ),
-        ]
+        ],
     )
 
 

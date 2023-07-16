@@ -3,7 +3,7 @@ import os
 
 from enum import Enum
 from functools import partial
-from typing import Sequence
+from typing import Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -100,13 +100,17 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             df_scores,
             dict_recommended_item_distribution,
             dict_relevant_recommended_item_distribution,
-        ) = self._evaluate_recommender(recommender=recommender_object)
+        ) = self._evaluate_recommender(
+            recommender=recommender_object,
+        )
 
         num_users_evaluated = df_scores.shape[0]
         if num_users_evaluated <= 0:
             raise ValueError("TODO: fernando-debugger complete")
 
-        novelty_scores_train = metrics.nb_novelty_train(urm_train=self.urm_train)
+        novelty_scores_train = metrics.nb_novelty_train(
+            urm_train=self.urm_train,
+        )
 
         df_mean_scores = df_scores.describe()
 
@@ -318,12 +322,10 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
         arr_user_ids_batches = np.array_split(
             arr_user_ids,
-            indices_or_sections=num_batches,  # 100
+            indices_or_sections=num_batches,
         )
 
         num_users, num_items = self.URM_test.shape
-
-        list_df_results = []
 
         logger.info(f"Evaluating recommender.")
 
@@ -335,6 +337,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             cutoff: np.zeros(shape=(num_items,), dtype=np.int32)
             for cutoff in self._str_cutoffs
         }
+
+        list_df_results_per_user_batch: list[pd.DataFrame] = []
 
         for arr_batch_user_id in tqdm(arr_user_ids_batches):
             list_batch_recommended_items: list[list[int]] = recommender.recommend(
@@ -351,16 +355,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                 names=["user_id", "recommender"],
             )
 
-            columns = pd.MultiIndex.from_product(
-                iterables=[self._str_cutoffs, self._str_metrics],
-                names=["cutoff", "metric"],
-            )
+            dict_results_in_batch: dict[tuple[str, str], Union[np.ndarray, float]] = {}
 
-            df_results = pd.DataFrame(
-                data=None,
-                index=index,
-                columns=columns,
-            )
             for cutoff in self.cutoff_list:
                 (
                     arr_cutoff_average_precision,
@@ -388,68 +384,95 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                     max_cutoff=self.max_cutoff,
                 )
 
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.MAP.value)
-                ] = arr_cutoff_average_precision
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.PRECISION.value)
-                ] = arr_cutoff_precision
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.RECALL.value)
-                ] = arr_cutoff_recall
-                df_results[(str(cutoff), EvaluatorMetrics.NDCG.value)] = arr_cutoff_ndcg
-                df_results[(str(cutoff), EvaluatorMetrics.MRR.value)] = arr_cutoff_rr
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.HIT_RATE.value)
-                ] = arr_cutoff_hit_rate
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.ARHR.value)
-                ] = arr_cutoff_arhr_all_hits
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.F1.value)
-                ] = arr_cutoff_f1_score
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.NOVELTY.value)
-                ] = arr_cutoff_novelty_score
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.COVERAGE_USER.value)
-                ] = arr_cutoff_coverage_users
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.COVERAGE_USER_HIT.value)
-                ] = arr_cutoff_coverage_users_hit
-
-                # Diversity metrics only make sense when computed on all users, here we're only using a placeholder
-                # value.
-                df_results[(str(cutoff), EvaluatorMetrics.COVERAGE_ITEM.value)] = 0.0
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.COVERAGE_ITEM_HIT.value)
-                ] = 0.0
-
-                df_results[(str(cutoff), EvaluatorMetrics.RATIO_NOVELTY.value)] = 0.0
-
-                df_results[(str(cutoff), EvaluatorMetrics.DIVERSITY_GINI.value)] = 0.0
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.RATIO_DIVERSITY_GINI.value)
-                ] = 0.0
-
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.DIVERSITY_HERFINDAHL.value)
-                ] = 0.0
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL.value)
-                ] = 0.0
-
-                df_results[(str(cutoff), EvaluatorMetrics.SHANNON_ENTROPY.value)] = 0.0
-                df_results[
-                    (str(cutoff), EvaluatorMetrics.RATIO_SHANNON_ENTROPY.value)
-                ] = 0.0
-
-                df_results[
-                    (
-                        str(cutoff),
-                        ExtendedEvaluatorMetrics.POSITION_FIRST_RELEVANT.value,
-                    )
-                ] = arr_cutoff_position_first_relevant_item
+                dict_results_in_batch.update(
+                    {
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.MAP.value,
+                        ): arr_cutoff_average_precision,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.PRECISION.value,
+                        ): arr_cutoff_precision,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.RECALL.value,
+                        ): arr_cutoff_recall,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.NDCG.value,
+                        ): arr_cutoff_ndcg,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.MRR.value,
+                        ): arr_cutoff_rr,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.HIT_RATE.value,
+                        ): arr_cutoff_hit_rate,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.ARHR.value,
+                        ): arr_cutoff_arhr_all_hits,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.F1.value,
+                        ): arr_cutoff_f1_score,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.NOVELTY.value,
+                        ): arr_cutoff_novelty_score,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.COVERAGE_USER.value,
+                        ): arr_cutoff_coverage_users,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.COVERAGE_USER_HIT.value,
+                        ): arr_cutoff_coverage_users_hit,
+                        # The following diversity metrics only make sense when computed on all users, here we're only using a placeholder.
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.COVERAGE_ITEM.value,
+                        ): 0.0,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.COVERAGE_ITEM_HIT.value,
+                        ): 0.0,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.RATIO_NOVELTY.value,
+                        ): 0.0,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.DIVERSITY_GINI.value,
+                        ): 0.0,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.RATIO_DIVERSITY_GINI.value,
+                        ): 0.0,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.DIVERSITY_HERFINDAHL.value,
+                        ): 0.0,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.RATIO_DIVERSITY_HERFINDAHL.value,
+                        ): 0.0,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.SHANNON_ENTROPY.value,
+                        ): 0.0,
+                        (
+                            str(cutoff),
+                            EvaluatorMetrics.RATIO_SHANNON_ENTROPY.value,
+                        ): 0.0,
+                        (
+                            str(cutoff),
+                            ExtendedEvaluatorMetrics.POSITION_FIRST_RELEVANT.value,
+                        ): arr_cutoff_position_first_relevant_item,
+                    }
+                )
 
                 dict_cutoff_recommended_item_counters[
                     str(cutoff)
@@ -461,10 +484,16 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             if self.ignore_items_flag:
                 recommender.reset_items_to_ignore()
 
-            list_df_results.append(df_results)
+            list_df_results_per_user_batch.append(
+                pd.DataFrame(
+                    data=dict_results_in_batch,
+                    index=index,
+                    dtype=np.float64,
+                )
+            )
 
         df_results = pd.concat(
-            list_df_results,
+            list_df_results_per_user_batch,
             axis="index",
         )
 

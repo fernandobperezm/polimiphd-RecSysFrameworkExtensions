@@ -1,6 +1,7 @@
+import logging
 import os
 from functools import cached_property
-from typing import Any, Callable, NamedTuple, Protocol
+from typing import Any, Callable, NamedTuple, Union, cast, Literal
 
 import attrs
 import dask.dataframe as dd
@@ -10,16 +11,28 @@ import scipy.sparse as sp
 import scipy.stats as st
 from Data_manager.DataReader_utils import compute_density
 from Data_manager.Dataset import gini_index
-from scipy.stats.stats import DescribeResult
 from tqdm import tqdm
 
 from recsys_framework_extensions.data.io import DataIO
-from recsys_framework_extensions.data.validate import ensure_csr_matrix, ensure_leave_one_out_dataset, \
-    ensure_implicit_dataset, ensure_disjoint_sparse_matrices
+from recsys_framework_extensions.data.validate import (
+    ensure_csr_matrix,
+    ensure_leave_one_out_dataset,
+    ensure_implicit_dataset,
+    ensure_disjoint_sparse_matrices,
+)
 from recsys_framework_extensions.evaluation import EvaluationStrategy
-import logging
 
 logger = logging.getLogger(__name__)
+
+
+@attrs.define(kw_only=True, frozen=True)
+class DescribeResult:
+    nobs: Union[int, np.ndarray]
+    minmax: Union[tuple[float, float], tuple[np.ndarray, np.ndarray]]
+    mean: Union[float, np.ndarray]
+    variance: Union[float, np.ndarray]
+    skewness: Union[float, np.ndarray]
+    kurtosis: Union[float, np.ndarray]
 
 
 class InteractionsDataSplits(NamedTuple):
@@ -52,7 +65,7 @@ class DatasetConfigBackupMixin:
             data_dict_to_save={
                 "config": attrs.asdict(config),
                 "sha256_hash": config.sha256_hash,  # type: ignore
-            }
+            },
         )
 
 
@@ -76,7 +89,7 @@ class DataIOMixin:
             DataIO.s_save_data(
                 folder_path=folder_path,
                 file_name=file_name,
-                data_dict_to_save=dict_data
+                data_dict_to_save=dict_data,
             )
 
         else:
@@ -89,8 +102,10 @@ class DataIOMixin:
 
 
 class NumpyDataMixin:
-    encoding = "ASCII"
-    allow_pickle = True  # Loading impressions (arrays of arrays) require allow_pickle=True
+    encoding: Literal["ASCII", "latin1", "bytes"] = "ASCII"
+    allow_pickle = (
+        True  # Loading impressions (arrays of arrays) require allow_pickle=True
+    )
 
     def _to_numpy(
         self,
@@ -107,7 +122,6 @@ class NumpyDataMixin:
         file_path: str,
         to_numpy_func: Callable[[], np.ndarray],
     ) -> np.ndarray:
-
         if not os.path.exists(file_path):
             np_arr = to_numpy_func()
             self._to_numpy(
@@ -118,9 +132,7 @@ class NumpyDataMixin:
         else:
             npz_data: dict[str, np.ndarray]
             with np.load(
-                file_path,
-                encoding=self.encoding,
-                allow_pickle=self.allow_pickle
+                file_path, encoding=self.encoding, allow_pickle=self.allow_pickle
             ) as npz_data:
                 np_arr = npz_data["np_arr"]
 
@@ -128,8 +140,10 @@ class NumpyDataMixin:
 
 
 class NumpyDictDataMixin:
-    encoding = "ASCII"
-    allow_pickle = True  # Loading impressions (arrays of arrays) require allow_pickle=True
+    encoding: Literal["ASCII", "latin1", "bytes"] = "ASCII"
+    allow_pickle = (
+        True  # Loading impressions (arrays of arrays) require allow_pickle=True
+    )
 
     def _to_numpy_dict(
         self,
@@ -158,11 +172,9 @@ class NumpyDictDataMixin:
         else:
             npz_data: dict[str, np.ndarray]
             with np.load(
-                file_path,
-                encoding=self.encoding,
-                allow_pickle=self.allow_pickle
+                file_path, encoding=self.encoding, allow_pickle=self.allow_pickle
             ) as npz_data:
-                for k,v in npz_data.items():
+                for k, v in npz_data.items():
                     loaded_dict[k] = v
 
         return loaded_dict
@@ -177,9 +189,7 @@ class ParquetDataMixin:
         df: pd.DataFrame,
         file_path: str,
     ) -> None:
-        logger.debug(
-            f"Saving dataframe as parquet in {file_path}."
-        )
+        logger.debug(f"Saving dataframe as parquet in {file_path}.")
         df.to_parquet(
             path=file_path,
             engine=self.engine,
@@ -212,8 +222,7 @@ class ParquetDataMixin:
         to_pandas_func: Callable[[], list[pd.DataFrame]],
     ) -> list[pd.DataFrame]:
         any_file_not_created = any(
-            not os.path.exists(file_path)
-            for file_path in file_paths
+            not os.path.exists(file_path) for file_path in file_paths
         )
 
         if any_file_not_created:
@@ -281,9 +290,7 @@ class SparseDataMixin:
         sparse_matrix: sp.spmatrix,
         file_path: str,
     ) -> None:
-        logger.debug(
-            f"Saving sparse matrix in {file_path}."
-        )
+        logger.debug(f"Saving sparse matrix in {file_path}.")
         sp.save_npz(
             file_path,
             matrix=sparse_matrix,
@@ -313,8 +320,7 @@ class SparseDataMixin:
         to_sparse_matrices_func: Callable[[], list[sp.spmatrix]],
     ) -> list[sp.spmatrix]:
         any_file_not_created = any(
-            not os.path.exists(file_path)
-            for file_path in file_paths
+            not os.path.exists(file_path) for file_path in file_paths
         )
 
         if any_file_not_created:
@@ -326,10 +332,7 @@ class SparseDataMixin:
                 )
 
         else:
-            sparse_matrices = [
-                sp.load_npz(file_path)
-                for file_path in file_paths
-            ]
+            sparse_matrices = [sp.load_npz(file_path) for file_path in file_paths]
 
         return sparse_matrices
 
@@ -426,9 +429,7 @@ class LazyBaseDataMixin:
             file_name=self.__save_file_name,
         )
 
-        return global_attributes_dict[
-            self._key_dataset_name
-        ]
+        return global_attributes_dict[self._key_dataset_name]
 
     @cached_property
     def dataset_config(self) -> dict[str, Any]:
@@ -437,9 +438,7 @@ class LazyBaseDataMixin:
             file_name=self.__save_file_name,
         )
 
-        return global_attributes_dict[
-            self._key_dataset_config
-        ]
+        return global_attributes_dict[self._key_dataset_config]
 
     @cached_property
     def dataset_sha256_hash(self) -> str:
@@ -448,9 +447,7 @@ class LazyBaseDataMixin:
             file_name=self.__save_file_name,
         )
 
-        return global_attributes_dict[
-            self._key_dataset_sha256_hash
-        ]
+        return global_attributes_dict[self._key_dataset_sha256_hash]
 
     @cached_property
     def mapper_user_original_id_to_index(self) -> dict[Any, int]:
@@ -459,9 +456,7 @@ class LazyBaseDataMixin:
             file_name=self.__save_file_name,
         )
 
-        return global_attributes_dict[
-            self._key_mapper_user_original_id_to_index
-        ]
+        return global_attributes_dict[self._key_mapper_user_original_id_to_index]
 
     @cached_property
     def mapper_item_original_id_to_index(self) -> dict[Any, int]:
@@ -470,9 +465,7 @@ class LazyBaseDataMixin:
             file_name=self.__save_file_name,
         )
 
-        return global_attributes_dict[
-            self._key_mapper_item_original_id_to_index
-        ]
+        return global_attributes_dict[self._key_mapper_item_original_id_to_index]
 
     def verify_data_consistency(self) -> None:
         pass
@@ -518,9 +511,7 @@ class LazyBaseDataMixin:
 
         self._save_folder_path = save_folder_path
 
-        logger.debug(
-            f"Checking that dataset exists, if not, raise exception."
-        )
+        logger.debug(f"Checking that dataset exists, if not, raise exception.")
 
         data_exists = DataIO.s_file_exists(
             folder_path=self._save_folder_path,
@@ -599,18 +590,14 @@ class InteractionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
         print_preamble = f"{self.dataset_name} consistency check:"
 
         if len(self.interactions.values()) == 0:
-            raise ValueError(
-                f"{print_preamble} No interactions exist"
-            )
+            raise ValueError(f"{print_preamble} No interactions exist")
 
         urm_all = self.get_URM_all()
         num_users, num_items = urm_all.shape
         num_interactions = urm_all.nnz
 
         if num_interactions <= 0:
-            raise ValueError(
-                f"{print_preamble} Number of interactions in URM is 0."
-            )
+            raise ValueError(f"{print_preamble} Number of interactions in URM is 0.")
 
         if self.is_interactions_implicit and np.any(urm_all.data != 1.0):
             raise ValueError(
@@ -630,12 +617,16 @@ class InteractionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
                 )
 
         # Check if item index-id and user index-id are consistent
-        if len(set(self.mapper_user_original_id_to_index.values())) != len(self.mapper_user_original_id_to_index):
+        if len(set(self.mapper_user_original_id_to_index.values())) != len(
+            self.mapper_user_original_id_to_index
+        ):
             raise ValueError(
                 f"{print_preamble} user it-to-index mapper values do not have a 1-to-1 correspondence with the key"
             )
 
-        if len(set(self.mapper_item_original_id_to_index.values())) != len(self.mapper_item_original_id_to_index):
+        if len(set(self.mapper_item_original_id_to_index.values())) != len(
+            self.mapper_item_original_id_to_index
+        ):
             raise ValueError(
                 f"{print_preamble} item it-to-index mapper values do not have a 1-to-1 correspondence with the key"
             )
@@ -668,7 +659,7 @@ class InteractionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
 
         if not np.isin(
             nonzero_items,
-            np.array(list(self.mapper_item_original_id_to_index.values()))
+            np.array(list(self.mapper_item_original_id_to_index.values())),
         ).all():
             raise ValueError(
                 f"{print_preamble} there exist items with interactions that do not have a mapper entry"
@@ -679,7 +670,7 @@ class InteractionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
         nonzero_users = np.arange(0, num_users, dtype=np.int32)[nonzero_users_mask]
         if not np.isin(
             nonzero_users,
-            np.array(list(self.mapper_user_original_id_to_index.values()))
+            np.array(list(self.mapper_user_original_id_to_index.values())),
         ).all():
             raise ValueError(
                 f"{print_preamble} there exist users with interactions that do not have a mapper entry"
@@ -720,18 +711,20 @@ class InteractionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
         elif evaluation_strategy == EvaluationStrategy.TIMESTAMP:
             return self._get_urm_timestamp_splits()
         else:
-            raise ValueError(
-                f"Requested split ({evaluation_strategy}) does not exist."
-            )
+            raise ValueError(f"Requested split ({evaluation_strategy}) does not exist.")
 
-    def _get_urm_leave_last_k_out_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
+    def _get_urm_leave_last_k_out_splits(
+        self,
+    ) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
         return (
             self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TRAIN],
             self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_VALIDATION],
             self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TEST],
         )
 
-    def _get_urm_timestamp_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
+    def _get_urm_timestamp_splits(
+        self,
+    ) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
         return (
             self.interactions[self.NAME_URM_TIMESTAMP_TRAIN],
             self.interactions[self.NAME_URM_TIMESTAMP_VALIDATION],
@@ -749,7 +742,7 @@ class InteractionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
                 "interactions": self.interactions,
                 "is_interactions_implicit": self.is_interactions_implicit,
             },
-            file_name="dataset_URM"
+            file_name="dataset_URM",
         )
 
     def load_data(self, save_folder_path):
@@ -758,9 +751,7 @@ class InteractionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
         )
 
         data_io = DataIO(folder_path=save_folder_path)
-        impressions_attributes_dict = data_io.load_data(
-            file_name="dataset_URM"
-        )
+        impressions_attributes_dict = data_io.load_data(file_name="dataset_URM")
 
         for attrib_name, attrib_object in impressions_attributes_dict.items():
             self.__setattr__(attrib_name, attrib_object)
@@ -790,9 +781,7 @@ class LazyInteractionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
             file_name=self.__save_file_name,
         )
 
-        return data_dict[
-            self._key_interactions
-        ]
+        return data_dict[self._key_interactions]
 
     @cached_property
     def is_interactions_implicit(self) -> bool:
@@ -801,9 +790,7 @@ class LazyInteractionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
             file_name=self.__save_file_name,
         )
 
-        return data_dict[
-            self._key_is_interactions_implicit
-        ]
+        return data_dict[self._key_is_interactions_implicit]
 
     def save_data(self, save_folder_path):
         logger.debug(
@@ -824,24 +811,28 @@ class LazyInteractionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
             },
         )
 
-    def get_urm_splits(self, evaluation_strategy: EvaluationStrategy) -> InteractionsDataSplits:
+    def get_urm_splits(
+        self, evaluation_strategy: EvaluationStrategy
+    ) -> InteractionsDataSplits:
         if evaluation_strategy == EvaluationStrategy.LEAVE_LAST_K_OUT:
             return self._get_urm_leave_last_k_out_splits()
         elif evaluation_strategy == EvaluationStrategy.TIMESTAMP:
             return self._get_urm_timestamp_splits()
         else:
-            raise ValueError(
-                f"Requested split ({evaluation_strategy}) does not exist."
-            )
+            raise ValueError(f"Requested split ({evaluation_strategy}) does not exist.")
 
     def _get_urm_leave_last_k_out_splits(self) -> InteractionsDataSplits:
         splits = InteractionsDataSplits(
             sp_urm_train=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TRAIN],
-            sp_urm_validation=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_VALIDATION],
-            sp_urm_train_validation=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TRAIN_VALIDATION],
+            sp_urm_validation=self.interactions[
+                self.NAME_URM_LEAVE_LAST_K_OUT_VALIDATION
+            ],
+            sp_urm_train_validation=self.interactions[
+                self.NAME_URM_LEAVE_LAST_K_OUT_TRAIN_VALIDATION
+            ],
             sp_urm_test=self.interactions[self.NAME_URM_LEAVE_LAST_K_OUT_TEST],
         )
-        
+
         logger.info(
             f"Ensuring dataset consistency. Testing for CSR Matrices and Implicit Dataset"
         )
@@ -884,7 +875,9 @@ class LazyInteractionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
         return InteractionsDataSplits(
             sp_urm_train=self.interactions[self.NAME_URM_TIMESTAMP_TRAIN],
             sp_urm_validation=self.interactions[self.NAME_URM_TIMESTAMP_VALIDATION],
-            sp_urm_train_validation=self.interactions[self.NAME_URM_TIMESTAMP_TRAIN_VALIDATION],
+            sp_urm_train_validation=self.interactions[
+                self.NAME_URM_TIMESTAMP_TRAIN_VALIDATION
+            ],
             sp_urm_test=self.interactions[self.NAME_URM_TIMESTAMP_TEST],
         )
 
@@ -932,18 +925,20 @@ class ImpressionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
         elif evaluation_strategy == EvaluationStrategy.TIMESTAMP:
             return self._get_uim_timestamp_splits()
         else:
-            raise ValueError(
-                f"Requested split ({evaluation_strategy}) does not exist."
-            )
+            raise ValueError(f"Requested split ({evaluation_strategy}) does not exist.")
 
-    def _get_uim_leave_last_k_out_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
+    def _get_uim_leave_last_k_out_splits(
+        self,
+    ) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
         return (
             self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TRAIN],
             self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_VALIDATION],
             self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TEST],
         )
 
-    def _get_uim_timestamp_splits(self) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
+    def _get_uim_timestamp_splits(
+        self,
+    ) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
         return (
             self.impressions[self.NAME_UIM_TIMESTAMP_TRAIN],
             self.impressions[self.NAME_UIM_TIMESTAMP_VALIDATION],
@@ -967,7 +962,7 @@ class ImpressionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
                 "impressions": self.impressions,
                 "is_impressions_implicit": self.is_impressions_implicit,
             },
-            file_name="dataset_UIM"
+            file_name="dataset_UIM",
         )
 
     def load_data(self, save_folder_path):
@@ -976,9 +971,7 @@ class ImpressionsMixin(CSRMatrixStatisticsMixin, BaseDataMixin):
         )
 
         data_io = DataIO(folder_path=save_folder_path)
-        impressions_attributes_dict = data_io.load_data(
-            file_name="dataset_UIM"
-        )
+        impressions_attributes_dict = data_io.load_data(file_name="dataset_UIM")
 
         for attrib_name, attrib_object in impressions_attributes_dict.items():
             self.__setattr__(attrib_name, attrib_object)
@@ -1008,9 +1001,7 @@ class LazyImpressionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
             file_name=self.__save_file_name,
         )
 
-        return data_dict[
-            self._key_impressions
-        ]
+        return data_dict[self._key_impressions]
 
     @cached_property
     def is_impressions_implicit(self) -> bool:
@@ -1019,9 +1010,7 @@ class LazyImpressionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
             file_name=self.__save_file_name,
         )
 
-        return data_dict[
-            self._key_is_impressions_implicit
-        ]
+        return data_dict[self._key_is_impressions_implicit]
 
     def save_data(self, save_folder_path):
         logger.debug(
@@ -1042,21 +1031,25 @@ class LazyImpressionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
             },
         )
 
-    def get_uim_splits(self, evaluation_strategy: EvaluationStrategy) -> ImpressionsDataSplits:
+    def get_uim_splits(
+        self, evaluation_strategy: EvaluationStrategy
+    ) -> ImpressionsDataSplits:
         if evaluation_strategy == EvaluationStrategy.LEAVE_LAST_K_OUT:
             return self._get_uim_leave_last_k_out_splits()
         elif evaluation_strategy == EvaluationStrategy.TIMESTAMP:
             return self._get_uim_timestamp_splits()
         else:
-            raise ValueError(
-                f"Requested split ({evaluation_strategy}) does not exist."
-            )
+            raise ValueError(f"Requested split ({evaluation_strategy}) does not exist.")
 
     def _get_uim_leave_last_k_out_splits(self) -> ImpressionsDataSplits:
         return ImpressionsDataSplits(
             sp_uim_train=self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TRAIN],
-            sp_uim_validation=self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_VALIDATION],
-            sp_uim_train_validation=self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TRAIN_VALIDATION],
+            sp_uim_validation=self.impressions[
+                self.NAME_UIM_LEAVE_LAST_K_OUT_VALIDATION
+            ],
+            sp_uim_train_validation=self.impressions[
+                self.NAME_UIM_LEAVE_LAST_K_OUT_TRAIN_VALIDATION
+            ],
             sp_uim_test=self.impressions[self.NAME_UIM_LEAVE_LAST_K_OUT_TEST],
         )
 
@@ -1064,7 +1057,9 @@ class LazyImpressionsMixin(CSRMatrixStatisticsMixin, LazyBaseDataMixin):
         return ImpressionsDataSplits(
             sp_uim_train=self.impressions[self.NAME_UIM_TIMESTAMP_TRAIN],
             sp_uim_validation=self.impressions[self.NAME_UIM_TIMESTAMP_VALIDATION],
-            sp_uim_train_validation=self.impressions[self.NAME_UIM_TIMESTAMP_TRAIN_VALIDATION],
+            sp_uim_train_validation=self.impressions[
+                self.NAME_UIM_TIMESTAMP_TRAIN_VALIDATION
+            ],
             sp_uim_test=self.impressions[self.NAME_UIM_TIMESTAMP_TEST],
         )
 
@@ -1088,13 +1083,27 @@ class PandasDataFramesMixin(BaseDataMixin):
         for df_name, df in self.dataframes.items():
             df_describe = df.describe(
                 exclude=[object],
-                percentiles=[0.01, 0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 0.95, 0.99],
-                datetime_is_numeric=True,
+                percentiles=[
+                    0.01,
+                    0.05,
+                    0.1,
+                    0.2,
+                    0.25,
+                    0.3,
+                    0.4,
+                    0.5,
+                    0.6,
+                    0.7,
+                    0.75,
+                    0.8,
+                    0.9,
+                    0.95,
+                    0.99,
+                ],
             )
             logger.info(
                 f"DataReader: current dataframe is: {self.dataset_name} - {df_name}\n"
                 f"\n\t* {df_describe}"
-
             )
 
     def _assert_is_initialized(self):
@@ -1118,18 +1127,20 @@ class PandasDataFramesMixin(BaseDataMixin):
         elif evaluation_strategy == EvaluationStrategy.TIMESTAMP:
             return self._get_df_timestamp_splits()
         else:
-            raise ValueError(
-                f"Requested split ({evaluation_strategy}) does not exist."
-            )
+            raise ValueError(f"Requested split ({evaluation_strategy}) does not exist.")
 
-    def _get_df_leave_last_k_out_splits(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def _get_df_leave_last_k_out_splits(
+        self,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         return (
             self.dataframes[self.NAME_DF_LEAVE_LAST_K_OUT_TRAIN],
             self.dataframes[self.NAME_DF_LEAVE_LAST_K_OUT_VALIDATION],
             self.dataframes[self.NAME_DF_LEAVE_LAST_K_OUT_TEST],
         )
 
-    def _get_df_timestamp_splits(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def _get_df_timestamp_splits(
+        self,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         return (
             self.dataframes[self.NAME_DF_TIMESTAMP_TRAIN],
             self.dataframes[self.NAME_DF_TIMESTAMP_VALIDATION],
@@ -1152,7 +1163,7 @@ class PandasDataFramesMixin(BaseDataMixin):
             data_dict_to_save={
                 "dataframes": self.dataframes,
             },
-            file_name="dataset_DFs"
+            file_name="dataset_DFs",
         )
 
     def load_data(self, save_folder_path):
@@ -1161,9 +1172,7 @@ class PandasDataFramesMixin(BaseDataMixin):
         )
 
         data_io = DataIO(folder_path=save_folder_path)
-        dataframes_attributes_dict = data_io.load_data(
-            file_name="dataset_DFs"
-        )
+        dataframes_attributes_dict = data_io.load_data(file_name="dataset_DFs")
 
         for attrib_name, attrib_object in dataframes_attributes_dict.items():
             self.__setattr__(attrib_name, attrib_object)
@@ -1192,9 +1201,7 @@ class LazyPandasDataFramesMixin(LazyBaseDataMixin):
             file_name=self.__save_file_name,
         )
 
-        return data_dict[
-            self._key_dataframes
-        ]
+        return data_dict[self._key_dataframes]
 
     def save_data(self, save_folder_path):
         logger.debug(
@@ -1224,6 +1231,7 @@ class LazyImpressionsFeaturesMixin(LazyBaseDataMixin):
     Laziness avoids to load probably expensive data structures on memory if they're not used by the agent using the
     dataset, e.g., the impressions features exist but the recommender being trained does not use impressions features.
     """
+
     _impressions_features_dataframes: dict[str, pd.DataFrame] = dict()
     _impressions_features_sparse_matrices: dict[str, sp.csr_matrix] = dict()
 
@@ -1233,7 +1241,9 @@ class LazyImpressionsFeaturesMixin(LazyBaseDataMixin):
     def dataframe_available_features(self) -> list[str]:
         available_features: dict[str, list[str]] = DataIO.s_load_data(
             folder_path=os.path.join(
-                self._save_folder_path, self._folder_name_impressions_features, "",
+                self._save_folder_path,
+                self._folder_name_impressions_features,
+                "",
             ),
             file_name=f"available_features",
         )
@@ -1243,7 +1253,9 @@ class LazyImpressionsFeaturesMixin(LazyBaseDataMixin):
     def sparse_matrices_available_features(self) -> list[str]:
         available_features: dict[str, list[str]] = DataIO.s_load_data(
             folder_path=os.path.join(
-                self._save_folder_path, self._folder_name_impressions_features, "",
+                self._save_folder_path,
+                self._folder_name_impressions_features,
+                "",
             ),
             file_name=f"available_features",
         )
@@ -1253,7 +1265,9 @@ class LazyImpressionsFeaturesMixin(LazyBaseDataMixin):
     def dataframe_impression_feature(self, feature: str) -> pd.DataFrame:
         data_dict: dict[str, pd.DataFrame] = DataIO.s_load_data(
             folder_path=os.path.join(
-                self._save_folder_path, self._folder_name_impressions_features, "",
+                self._save_folder_path,
+                self._folder_name_impressions_features,
+                "",
             ),
             file_name=f"dataframe_{feature}",
         )
@@ -1263,7 +1277,9 @@ class LazyImpressionsFeaturesMixin(LazyBaseDataMixin):
     def sparse_matrix_impression_feature(self, feature: str) -> sp.csr_matrix:
         data_dict: dict[str, sp.csr_matrix] = DataIO.s_load_data(
             folder_path=os.path.join(
-                self._save_folder_path, self._folder_name_impressions_features, "",
+                self._save_folder_path,
+                self._folder_name_impressions_features,
+                "",
             ),
             file_name=f"sparse_matrix_{feature}",
         )
@@ -1280,7 +1296,9 @@ class LazyImpressionsFeaturesMixin(LazyBaseDataMixin):
         )
 
         save_folder_path = os.path.join(
-            save_folder_path, self._folder_name_impressions_features, "",
+            save_folder_path,
+            self._folder_name_impressions_features,
+            "",
         )
 
         # First, save the available features
@@ -1289,8 +1307,10 @@ class LazyImpressionsFeaturesMixin(LazyBaseDataMixin):
             file_name="available_features",
             data_dict_to_save={
                 "dataframes": list(self._impressions_features_dataframes.keys()),
-                "sparse_matrices": list(self._impressions_features_sparse_matrices.keys()),
-            }
+                "sparse_matrices": list(
+                    self._impressions_features_sparse_matrices.keys()
+                ),
+            },
         )
 
         # Second, save each feature dataframe independently.
@@ -1300,17 +1320,20 @@ class LazyImpressionsFeaturesMixin(LazyBaseDataMixin):
                 file_name=f"dataframe_{key_feature}",
                 data_dict_to_save={
                     key_feature: df_feature,
-                }
+                },
             )
 
         # Third, save each feature sparse matrix independently.
-        for key_feature, sp_feature in self._impressions_features_sparse_matrices.items():
+        for (
+            key_feature,
+            sp_feature,
+        ) in self._impressions_features_sparse_matrices.items():
             DataIO.s_save_data(
                 folder_path=save_folder_path,
                 file_name=f"sparse_matrix_{key_feature}",
                 data_dict_to_save={
                     key_feature: sp_feature,
-                }
+                },
             )
 
 
@@ -1320,19 +1343,11 @@ class DatasetStatisticsMixin:
     statistics_file_name: str
 
     def compute_statistics_df_on_csr_matrix(
-        self,
-        df: pd.DataFrame,
-        dataset_name: str,
-        user_column: str,
-        item_column: str
+        self, df: pd.DataFrame, dataset_name: str, user_column: str, item_column: str
     ) -> None:
-        user_codes, user_uniques = pd.factorize(
-            df[user_column]
-        )
+        user_codes, user_uniques = pd.factorize(df[user_column])
 
-        item_codes, item_uniques = pd.factorize(
-            df[item_column]
-        )
+        item_codes, item_uniques = pd.factorize(df[item_column])
 
         num_users = user_uniques.shape[0]
         num_items = item_uniques.shape[0]
@@ -1349,10 +1364,7 @@ class DatasetStatisticsMixin:
         assert row_indices.shape == data.shape
 
         matrix: sp.csr_matrix = sp.csr_matrix(
-            (
-                data,
-                (row_indices, col_indices)
-            ),
+            (data, (row_indices, col_indices)),
             shape=(num_users, num_items),
             dtype=np.int32,
         )
@@ -1376,10 +1388,13 @@ class DatasetStatisticsMixin:
         self.statistics[dataset_name][category_name]["csc_matrix"] = matrix_csc
 
         user_profile_length: np.ndarray = np.ediff1d(matrix.indptr)
-        user_profile_stats: DescribeResult = st.describe(
-            a=user_profile_length,
-            axis=0,
-            nan_policy="raise",
+        user_profile_stats = cast(
+            DescribeResult,
+            st.describe(
+                a=user_profile_length,
+                axis=0,
+                nan_policy="raise",
+            ),
         )
         self.statistics[dataset_name][category_name]["interactions_by_users"] = {
             "num_observations": user_profile_stats.nobs,
@@ -1395,10 +1410,13 @@ class DatasetStatisticsMixin:
         }
 
         item_profile_length: np.ndarray = np.ediff1d(matrix_csc.indptr)
-        item_profile_stats: DescribeResult = st.describe(
-            a=item_profile_length,
-            axis=0,
-            nan_policy="raise",
+        item_profile_stats = cast(
+            DescribeResult,
+            st.describe(
+                a=item_profile_length,
+                axis=0,
+                nan_policy="raise",
+            ),
         )
         self.statistics[dataset_name][category_name]["interactions_by_items"] = {
             "num_observations": item_profile_stats.nobs,
@@ -1408,9 +1426,7 @@ class DatasetStatisticsMixin:
             "variance": item_profile_stats.variance,
             "skewness": item_profile_stats.skewness,
             "kurtosis": item_profile_stats.kurtosis,
-            "gini_index": gini_index(
-                array=item_profile_length
-            ),
+            "gini_index": gini_index(array=item_profile_length),
         }
 
     def compare_two_dataframes(
@@ -1435,27 +1451,48 @@ class DatasetStatisticsMixin:
         df_other_num_records = df_other.shape[0]
 
         relative_difference_num_records = df_num_records - df_other_num_records
-        relative_percentage_num_records = (df_num_records - df_other_num_records) * 100 / df_num_records
+        relative_percentage_num_records = (
+            (df_num_records - df_other_num_records) * 100 / df_num_records
+        )
 
         self.statistics[dataset_name][df_name]["num_records"] = df_num_records
-        self.statistics[dataset_name][df_other_name]["num_records"] = df_other_num_records
+        self.statistics[dataset_name][df_other_name][
+            "num_records"
+        ] = df_other_num_records
 
-        self.statistics[dataset_name]["relative_difference_num_records"] = relative_difference_num_records
-        self.statistics[dataset_name]["relative_percentage_num_records"] = relative_percentage_num_records
+        self.statistics[dataset_name][
+            "relative_difference_num_records"
+        ] = relative_difference_num_records
+        self.statistics[dataset_name][
+            "relative_percentage_num_records"
+        ] = relative_percentage_num_records
 
         for column in columns_to_compare:
             df_num_uniques_column = df[column].nunique(dropna=True)
             df_other_num_uniques_column = df_other[column].nunique(dropna=True)
 
-            relative_difference_num_uniques = df_num_uniques_column - df_other_num_uniques_column
+            relative_difference_num_uniques = (
+                df_num_uniques_column - df_other_num_uniques_column
+            )
             relative_percentage_num_uniques = (
-                                                  df_num_uniques_column - df_other_num_uniques_column) * 100 / df_num_uniques_column
+                (df_num_uniques_column - df_other_num_uniques_column)
+                * 100
+                / df_num_uniques_column
+            )
 
-            self.statistics[dataset_name][df_name][f"num_uniques_{column}"] = df_num_records
-            self.statistics[dataset_name][df_other_name][f"num_uniques_{column}"] = df_other_num_records
+            self.statistics[dataset_name][df_name][
+                f"num_uniques_{column}"
+            ] = df_num_records
+            self.statistics[dataset_name][df_other_name][
+                f"num_uniques_{column}"
+            ] = df_other_num_records
 
-            self.statistics[dataset_name]["relative_difference_num_uniques"] = relative_difference_num_uniques
-            self.statistics[dataset_name]["relative_percentage_num_uniques"] = relative_percentage_num_uniques
+            self.statistics[dataset_name][
+                "relative_difference_num_uniques"
+            ] = relative_difference_num_uniques
+            self.statistics[dataset_name][
+                "relative_percentage_num_uniques"
+            ] = relative_percentage_num_uniques
 
     def compare_two_sparse_matrices(
         self,
@@ -1464,7 +1501,6 @@ class DatasetStatisticsMixin:
         other_csr_matrix: sp.csr_matrix,
         other_csr_matrix_name: str,
     ) -> None:
-
         dataset_name = f"{csr_matrix_name}-{other_csr_matrix_name}"
         if dataset_name not in self.statistics:
             self.statistics[dataset_name] = dict()
@@ -1478,22 +1514,34 @@ class DatasetStatisticsMixin:
         csr_matrix_num_records = csr_matrix.nnz
         csr_matrix_other_num_records = other_csr_matrix.nnz
 
-        relative_difference_num_records = csr_matrix_num_records - csr_matrix_other_num_records
-        relative_percentage_num_records = (relative_difference_num_records) * 100 / csr_matrix_num_records
+        relative_difference_num_records = (
+            csr_matrix_num_records - csr_matrix_other_num_records
+        )
+        relative_percentage_num_records = (
+            (relative_difference_num_records) * 100 / csr_matrix_num_records
+        )
 
-        self.statistics[dataset_name][csr_matrix_name]["num_records"] = csr_matrix_num_records
-        self.statistics[dataset_name][other_csr_matrix_name]["num_records"] = csr_matrix_other_num_records
+        self.statistics[dataset_name][csr_matrix_name][
+            "num_records"
+        ] = csr_matrix_num_records
+        self.statistics[dataset_name][other_csr_matrix_name][
+            "num_records"
+        ] = csr_matrix_other_num_records
 
-        self.statistics[dataset_name]["relative_difference_num_records"] = relative_difference_num_records
-        self.statistics[dataset_name]["relative_percentage_num_records"] = relative_percentage_num_records
+        self.statistics[dataset_name][
+            "relative_difference_num_records"
+        ] = relative_difference_num_records
+        self.statistics[dataset_name][
+            "relative_percentage_num_records"
+        ] = relative_percentage_num_records
 
         csr_matrix_profile_lengths = [
             np.ediff1d(csr_matrix.indptr),
-            np.ediff1d(csr_matrix.tocsc(copy=True).indptr)
+            np.ediff1d(csr_matrix.tocsc(copy=True).indptr),
         ]
         other_csr_matrix_profile_lengths = [
             np.ediff1d(other_csr_matrix.indptr),
-            np.ediff1d(other_csr_matrix.tocsc(copy=True).indptr)
+            np.ediff1d(other_csr_matrix.tocsc(copy=True).indptr),
         ]
         profile_length_types = [
             "user",
@@ -1505,18 +1553,26 @@ class DatasetStatisticsMixin:
             other_csr_matrix_profile_lengths,
             profile_length_types,
         ):
-            pl_stats: DescribeResult = st.describe(
-                a=pl,
-                axis=0,
-                nan_policy="raise",
+            pl_stats = cast(
+                DescribeResult,
+                st.describe(
+                    a=pl,
+                    axis=0,
+                    nan_policy="raise",
+                ),
             )
-            other_pl_stats: DescribeResult = st.describe(
-                a=other_pl,
-                axis=0,
-                nan_policy="raise",
+            other_pl_stats = cast(
+                DescribeResult,
+                st.describe(
+                    a=other_pl,
+                    axis=0,
+                    nan_policy="raise",
+                ),
             )
 
-            self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"] = {
+            self.statistics[dataset_name][csr_matrix_name][
+                f"interactions_by_{pl_type}"
+            ] = {
                 "num_observations": pl_stats.nobs,
                 "min": pl_stats.minmax[0],
                 "max": pl_stats.minmax[1],
@@ -1528,7 +1584,9 @@ class DatasetStatisticsMixin:
                 "gini_index": gini_index(array=pl),
             }
 
-            self.statistics[dataset_name][other_csr_matrix_name][f"interactions_by_{pl_type}"] = {
+            self.statistics[dataset_name][other_csr_matrix_name][
+                f"interactions_by_{pl_type}"
+            ] = {
                 "num_observations": other_pl_stats.nobs,
                 "min": other_pl_stats.minmax[0],
                 "max": other_pl_stats.minmax[1],
@@ -1540,75 +1598,149 @@ class DatasetStatisticsMixin:
                 "gini_index": gini_index(array=other_pl),
             }
 
-            self.statistics[dataset_name][f"relative_difference_interactions_by_{pl_type}"] = {
+            self.statistics[dataset_name][
+                f"relative_difference_interactions_by_{pl_type}"
+            ] = {
                 "num_observations": (
-                    self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["num_observations"]
-                    - self.statistics[dataset_name][other_csr_matrix_name][f"interactions_by_{pl_type}"][
-                        "num_observations"]
+                    self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["num_observations"]
+                    - self.statistics[dataset_name][other_csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["num_observations"]
                 ),
                 "min": (
-                    self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["min"]
-                    - self.statistics[dataset_name][other_csr_matrix_name][f"interactions_by_{pl_type}"]["min"]
+                    self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["min"]
+                    - self.statistics[dataset_name][other_csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["min"]
                 ),
                 "max": (
-                    self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["max"]
-                    - self.statistics[dataset_name][other_csr_matrix_name][f"interactions_by_{pl_type}"]["max"]
+                    self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["max"]
+                    - self.statistics[dataset_name][other_csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["max"]
                 ),
                 "mean": (
-                    self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["mean"]
-                    - self.statistics[dataset_name][other_csr_matrix_name][f"interactions_by_{pl_type}"]["mean"]
+                    self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["mean"]
+                    - self.statistics[dataset_name][other_csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["mean"]
                 ),
                 "variance": (
-                    self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["variance"]
-                    - self.statistics[dataset_name][other_csr_matrix_name][f"interactions_by_{pl_type}"]["variance"]
+                    self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["variance"]
+                    - self.statistics[dataset_name][other_csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["variance"]
                 ),
                 "std": (
-                    self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["std"]
-                    - self.statistics[dataset_name][other_csr_matrix_name][f"interactions_by_{pl_type}"]["std"]
+                    self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["std"]
+                    - self.statistics[dataset_name][other_csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["std"]
                 ),
                 "skewness": (
-                    self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["skewness"]
-                    - self.statistics[dataset_name][other_csr_matrix_name][f"interactions_by_{pl_type}"]["skewness"]
+                    self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["skewness"]
+                    - self.statistics[dataset_name][other_csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["skewness"]
                 ),
                 "kurtosis": (
-                    self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["kurtosis"]
-                    - self.statistics[dataset_name][other_csr_matrix_name][f"interactions_by_{pl_type}"]["kurtosis"]
+                    self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["kurtosis"]
+                    - self.statistics[dataset_name][other_csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["kurtosis"]
                 ),
             }
 
-            self.statistics[dataset_name][f"relative_percentage_interactions_by_{pl_type}"] = {
+            self.statistics[dataset_name][
+                f"relative_percentage_interactions_by_{pl_type}"
+            ] = {
                 "num_observations": (
-                    self.statistics[dataset_name][f"relative_difference_interactions_by_{pl_type}"][
-                        "num_observations"] * 100
-                    / self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["num_observations"]
+                    self.statistics[dataset_name][
+                        f"relative_difference_interactions_by_{pl_type}"
+                    ]["num_observations"]
+                    * 100
+                    / self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["num_observations"]
                 ),
                 "min": (
-                    self.statistics[dataset_name][f"relative_difference_interactions_by_{pl_type}"]["min"] * 100
-                    / self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["min"]
+                    self.statistics[dataset_name][
+                        f"relative_difference_interactions_by_{pl_type}"
+                    ]["min"]
+                    * 100
+                    / self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["min"]
                 ),
                 "max": (
-                    self.statistics[dataset_name][f"relative_difference_interactions_by_{pl_type}"]["max"] * 100
-                    / self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["max"]
+                    self.statistics[dataset_name][
+                        f"relative_difference_interactions_by_{pl_type}"
+                    ]["max"]
+                    * 100
+                    / self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["max"]
                 ),
                 "mean": (
-                    self.statistics[dataset_name][f"relative_difference_interactions_by_{pl_type}"]["mean"] * 100
-                    / self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["mean"]
+                    self.statistics[dataset_name][
+                        f"relative_difference_interactions_by_{pl_type}"
+                    ]["mean"]
+                    * 100
+                    / self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["mean"]
                 ),
                 "variance": (
-                    self.statistics[dataset_name][f"relative_difference_interactions_by_{pl_type}"]["variance"] * 100
-                    / self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["variance"]
+                    self.statistics[dataset_name][
+                        f"relative_difference_interactions_by_{pl_type}"
+                    ]["variance"]
+                    * 100
+                    / self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["variance"]
                 ),
                 "std": (
-                    self.statistics[dataset_name][f"relative_difference_interactions_by_{pl_type}"]["std"] * 100
-                    / self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["std"]
+                    self.statistics[dataset_name][
+                        f"relative_difference_interactions_by_{pl_type}"
+                    ]["std"]
+                    * 100
+                    / self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["std"]
                 ),
                 "skewness": (
-                    self.statistics[dataset_name][f"relative_difference_interactions_by_{pl_type}"]["skewness"] * 100
-                    / self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["skewness"]
+                    self.statistics[dataset_name][
+                        f"relative_difference_interactions_by_{pl_type}"
+                    ]["skewness"]
+                    * 100
+                    / self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["skewness"]
                 ),
                 "kurtosis": (
-                    self.statistics[dataset_name][f"relative_difference_interactions_by_{pl_type}"]["kurtosis"] * 100
-                    / self.statistics[dataset_name][csr_matrix_name][f"interactions_by_{pl_type}"]["kurtosis"]
+                    self.statistics[dataset_name][
+                        f"relative_difference_interactions_by_{pl_type}"
+                    ]["kurtosis"]
+                    * 100
+                    / self.statistics[dataset_name][csr_matrix_name][
+                        f"interactions_by_{pl_type}"
+                    ]["kurtosis"]
                 ),
             }
 
@@ -1754,25 +1886,27 @@ class DatasetStatisticsMixin:
                 self.statistics[dataset_name][column] = dict()
 
             self.statistics[dataset_name][column][f"profile_length"] = (
-                df[column].value_counts(
+                df[column]
+                .value_counts(
                     ascending=False,
                     sort=False,
                     normalize=False,
                     dropna=False,
-                ).rename(
-                    "profile_length"
-                ).to_frame()
+                )
+                .rename("profile_length")
+                .to_frame()
             )
 
             self.statistics[dataset_name][column][f"profile_length_normalized"] = (
-                df[column].value_counts(
+                df[column]
+                .value_counts(
                     ascending=False,
                     sort=False,
                     normalize=True,
                     dropna=False,
-                ).rename(
-                    "profile_length_normalized"
-                ).to_frame()
+                )
+                .rename("profile_length_normalized")
+                .to_frame()
             )
 
         for column in tqdm(columns_for_gini):
@@ -1780,10 +1914,12 @@ class DatasetStatisticsMixin:
                 self.statistics[dataset_name][column] = dict()
 
             # notna is there because columns_to_keep might be NA.
-            self.statistics[dataset_name][column]["gini_index_values_labels"] = gini_index(
-                array=df[column]
-            )
-            self.statistics[dataset_name][column]["gini_index_values_counts"] = gini_index(
+            self.statistics[dataset_name][column][
+                "gini_index_values_labels"
+            ] = gini_index(array=df[column])
+            self.statistics[dataset_name][column][
+                "gini_index_values_counts"
+            ] = gini_index(
                 array=df[column].value_counts(
                     dropna=True,
                     normalize=False,
