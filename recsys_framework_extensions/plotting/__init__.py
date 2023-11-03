@@ -19,10 +19,9 @@ import logging
 
 import matplotlib
 
-matplotlib.use(
-    backend='agg',
-    force=True
-)
+from recsys_framework_extensions.results import ExtendedResultFolderLoader
+
+matplotlib.use(backend="agg", force=True)
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
@@ -34,16 +33,8 @@ __FONT_SCALE = 1.0
 __PALETTE = "YlGnBu"  # "deep"
 __STYLE = "whitegrid"
 __CONTEXT = "paper"  # change to "paper" when creating figures for the paper
-__FIG_SIZE_WIDTH = (
-    16
-    if __CONTEXT == "paper"
-    else 20
-)
-__FIG_SIZE_HEIGHT = (
-    20
-    if __CONTEXT == "paper"
-    else 20
-)
+__FIG_SIZE_WIDTH = 16 if __CONTEXT == "paper" else 20
+__FIG_SIZE_HEIGHT = 20 if __CONTEXT == "paper" else 20
 __FIG_DPI = 300
 sns.set_theme(
     context=__CONTEXT,
@@ -52,22 +43,19 @@ sns.set_theme(
     font=__FONT_FAMILY,
     font_scale=__FONT_SCALE,
     rc={
-        'pdf.fonttype': 42,
-        'ps.fonttype': 42,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
         # 'font.size': 15,
         # 'figure.figsize': (__FIG_SIZE_WIDTH, __FIG_SIZE_HEIGHT),
-        'figure.dpi': __FIG_DPI,
-        'text.usetex': False,  # True,
+        "figure.dpi": __FIG_DPI,
+        "text.usetex": False,  # True,
         # https://stackoverflow.com/a/64411992/13385583
-        'text.latex.preamble': r""" 
+        "text.latex.preamble": r""" 
             \usepackage{libertine}
             \usepackage[libertine]{newtxmath}""",
-    }
+    },
 )
-sns.color_palette(
-    palette=__PALETTE,
-    as_cmap=True
-)
+sns.color_palette(palette=__PALETTE, as_cmap=True)
 
 assert __CONTEXT in __VALID_CONTEXTS
 
@@ -86,23 +74,17 @@ def _get_training_item_weights_plots_filenames(
     recommender_name: str,
 ) -> tuple[str, str, str, str]:
     item_weights_heatmap_with_means_filename = os.path.join(
-        plot_filepath,
-        f"{recommender_name}_training_item_weights.gif"
+        plot_filepath, f"{recommender_name}_training_item_weights.gif"
     )
     frames_item_weights_heatmap_with_means_base_path = os.path.join(
-        plot_filepath,
-        "frames",
-        f"{recommender_name}_training_item_weights_epoch"
+        plot_filepath, "frames", f"{recommender_name}_training_item_weights_epoch"
     )
 
     norm_item_weights_heatmap_with_means_filename = os.path.join(
-        norm_plot_filepath,
-        f"{recommender_name}_training_item_weights.gif"
+        norm_plot_filepath, f"{recommender_name}_training_item_weights.gif"
     )
     frames_norm_item_weights_heatmap_with_means_base_path = os.path.join(
-        norm_plot_filepath,
-        "frames",
-        f"{recommender_name}_training_item_weights_epoch"
+        norm_plot_filepath, "frames", f"{recommender_name}_training_item_weights_epoch"
     )
 
     return (
@@ -119,15 +101,16 @@ def _get_item_weights_plots_filenames(
     recommender_name: str,
 ) -> tuple[str, str]:
     item_weights_heatmap_with_means_filename = os.path.join(
-        plot_filepath,
-        f"{recommender_name}_item_weights_with_means.png"
+        plot_filepath, f"{recommender_name}_item_weights_with_means.png"
     )
     norm_item_weights_heatmap_with_means_filename = os.path.join(
-        norm_plot_filepath,
-        f"{recommender_name}_item_weights_with_means.png"
+        norm_plot_filepath, f"{recommender_name}_item_weights_with_means.png"
     )
 
-    return item_weights_heatmap_with_means_filename, norm_item_weights_heatmap_with_means_filename
+    return (
+        item_weights_heatmap_with_means_filename,
+        norm_item_weights_heatmap_with_means_filename,
+    )
 
 
 def _get_losses_plots_filenames(
@@ -136,13 +119,11 @@ def _get_losses_plots_filenames(
     recommender_name: str,
 ) -> tuple[str, str]:
     generator_losses_filename = os.path.join(
-        generator_plots_path,
-        f"{recommender_name}_losses_plot.png"
+        generator_plots_path, f"{recommender_name}_losses_plot.png"
     )
 
     discriminator_losses_filename = os.path.join(
-        discriminator_plots_path,
-        f"{recommender_name}_losses_plot.png"
+        discriminator_plots_path, f"{recommender_name}_losses_plot.png"
     )
 
     return generator_losses_filename, discriminator_losses_filename
@@ -153,27 +134,26 @@ def _get_item_weights_comparison_plots_filenames(
     recommender_names: list[str],
 ) -> str:
     norm_comparison_all_recommenders_filename = os.path.join(
-        norm_plot_filepath,
-        f"item_weights_comparison_{'_'.join(recommender_names)}"
+        norm_plot_filepath, f"item_weights_comparison_{'_'.join(recommender_names)}"
     )
 
     return norm_comparison_all_recommenders_filename
 
 
 def _get_epochs_comparison_plots_filenames(
-    plot_path: str,
-    recommender_names: list[str]
+    plot_path: str, recommender_names: list[str]
 ) -> tuple[str, str]:
     epochs_comparison_recommenders_filename = os.path.join(
-        plot_path,
-        f"epochs_comparison_{'_'.join(recommender_names)}"
+        plot_path, f"epochs_comparison_{'_'.join(recommender_names)}"
     )
     epochs_comparison_recommenders_log_scale_filename = os.path.join(
-        plot_path,
-        f"epochs_comparison_{'_'.join(recommender_names)}_log_scale"
+        plot_path, f"epochs_comparison_{'_'.join(recommender_names)}_log_scale"
     )
 
-    return epochs_comparison_recommenders_filename, epochs_comparison_recommenders_log_scale_filename
+    return (
+        epochs_comparison_recommenders_filename,
+        epochs_comparison_recommenders_log_scale_filename,
+    )
 
 
 def _get_icm_heatmap_plot_filenames(
@@ -181,14 +161,8 @@ def _get_icm_heatmap_plot_filenames(
     icm_name: str,
 ) -> tuple[str, str]:
     return (
-        os.path.join(
-            plot_filepath,
-            f"{icm_name}_heatmap.png"
-        ),
-        os.path.join(
-            plot_filepath,
-            f"norm_{icm_name}_heatmap.png"
-        ),
+        os.path.join(plot_filepath, f"{icm_name}_heatmap.png"),
+        os.path.join(plot_filepath, f"norm_{icm_name}_heatmap.png"),
     )
 
 
@@ -197,14 +171,8 @@ def _get_similarity_heatmap_plot_filenames(
     similarity_name: str,
 ) -> tuple[str, str]:
     return (
-        os.path.join(
-            plot_filepath,
-            f"{similarity_name}_heatmap.png"
-        ),
-        os.path.join(
-            plot_filepath,
-            f"norm_{similarity_name}_heatmap.png"
-        ),
+        os.path.join(plot_filepath, f"{similarity_name}_heatmap.png"),
+        os.path.join(plot_filepath, f"norm_{similarity_name}_heatmap.png"),
     )
 
 
@@ -224,8 +192,7 @@ def _generate_item_weights_with_urm_heatmap(
     width_cols_ratios = [10, 10, 30, 30, 10, 10]
 
     fig: plt.Figure = plt.figure(
-        figsize=(__FIG_SIZE_WIDTH, __FIG_SIZE_WIDTH),
-        dpi=__FIG_DPI
+        figsize=(__FIG_SIZE_WIDTH, __FIG_SIZE_WIDTH), dpi=__FIG_DPI
     )
     gs = plt.GridSpec(
         nrows=num_rows,
@@ -238,42 +205,34 @@ def _generate_item_weights_with_urm_heatmap(
     ax_urm_heatmap_color_bar: plt.Axes = fig.add_subplot(gs[0, 2])
     ax_item_weights_heatmap_color_bar: plt.Axes = fig.add_subplot(gs[0, 3])
 
-    ax_urm_heatmap: plt.Axes = fig.add_subplot(
-        gs[1, 2]
-    )
+    ax_urm_heatmap: plt.Axes = fig.add_subplot(gs[1, 2])
     ax_item_weights_heatmap: plt.Axes = fig.add_subplot(
-        gs[1, 3],
-        sharex=ax_urm_heatmap,
-        sharey=ax_urm_heatmap
+        gs[1, 3], sharex=ax_urm_heatmap, sharey=ax_urm_heatmap
     )
 
     ax_urm_user_popularity_boxplot: plt.Axes = fig.add_subplot(
         gs[1, 0],
     )
     ax_urm_user_popularity_scatter: plt.Axes = fig.add_subplot(
-        gs[1, 1],
-        sharey=ax_urm_heatmap
+        gs[1, 1], sharey=ax_urm_heatmap
     )
 
     ax_urm_item_popularity_scatter: plt.Axes = fig.add_subplot(
-        gs[2, 2],
-        sharex=ax_urm_heatmap
+        gs[2, 2], sharex=ax_urm_heatmap
     )
     ax_urm_item_popularity_boxplot: plt.Axes = fig.add_subplot(
         gs[3, 2],
     )
 
     ax_item_weights_user_means_scatter: plt.Axes = fig.add_subplot(
-        gs[1, 4],
-        sharey=ax_item_weights_heatmap
+        gs[1, 4], sharey=ax_item_weights_heatmap
     )
     ax_item_weights_user_means_boxplot: plt.Axes = fig.add_subplot(
         gs[1, 5],
     )
 
     ax_item_weights_item_means_scatter: plt.Axes = fig.add_subplot(
-        gs[2, 3],
-        sharex=ax_item_weights_heatmap
+        gs[2, 3], sharex=ax_item_weights_heatmap
     )
     ax_item_weights_item_means_boxplot: plt.Axes = fig.add_subplot(
         gs[3, 3],
@@ -285,7 +244,9 @@ def _generate_item_weights_with_urm_heatmap(
         popular_item_indices_desc = np.flip(np.argsort(item_popularity))
 
         urm = urm[popular_user_indices_desc, :][:, popular_item_indices_desc]
-        item_weights = item_weights[popular_user_indices_desc, :][:, popular_item_indices_desc]
+        item_weights = item_weights[popular_user_indices_desc, :][
+            :, popular_item_indices_desc
+        ]
         user_popularity = user_popularity[popular_user_indices_desc]
         item_popularity = item_popularity[popular_item_indices_desc]
 
@@ -301,7 +262,8 @@ def _generate_item_weights_with_urm_heatmap(
             item_weights_heatmap_data = item_weights - heatmap_data_min
         else:
             item_weights_heatmap_data = (item_weights - heatmap_data_min) / (
-                heatmap_data_max - heatmap_data_min)
+                heatmap_data_max - heatmap_data_min
+            )
 
         heatmap_data_min = 0.0
         heatmap_data_max = 1.0
@@ -315,32 +277,68 @@ def _generate_item_weights_with_urm_heatmap(
 
     plot_objects = [
         [
-            ax_urm_heatmap_color_bar, ax_urm_heatmap, urm.toarray(), None, None,
+            ax_urm_heatmap_color_bar,
+            ax_urm_heatmap,
+            urm.toarray(),
+            None,
+            None,
             "User-Rating Matrix",
-            ax_urm_user_popularity_boxplot, user_popularity, "User Popularity",
-            ax_urm_user_popularity_scatter, user_popularity, "User Popularity",
-            ax_urm_item_popularity_boxplot, item_popularity, "Item Popularity",
-            ax_urm_item_popularity_scatter, item_popularity, "Item Popularity",
+            ax_urm_user_popularity_boxplot,
+            user_popularity,
+            "User Popularity",
+            ax_urm_user_popularity_scatter,
+            user_popularity,
+            "User Popularity",
+            ax_urm_item_popularity_boxplot,
+            item_popularity,
+            "Item Popularity",
+            ax_urm_item_popularity_scatter,
+            item_popularity,
+            "Item Popularity",
         ],
         [
-            ax_item_weights_heatmap_color_bar, ax_item_weights_heatmap,
-            item_weights_heatmap_data, heatmap_data_min, heatmap_data_max, "User-Item Weights",
-
-            ax_item_weights_user_means_boxplot, user_weights_mean, "User Weights Mean",
-            ax_item_weights_user_means_scatter, user_weights_mean, "User Weights Mean",
-            ax_item_weights_item_means_boxplot, item_weights_mean, "Item Weights Mean",
-            ax_item_weights_item_means_scatter, item_weights_mean, "Item Weights Mean",
-        ]
+            ax_item_weights_heatmap_color_bar,
+            ax_item_weights_heatmap,
+            item_weights_heatmap_data,
+            heatmap_data_min,
+            heatmap_data_max,
+            "User-Item Weights",
+            ax_item_weights_user_means_boxplot,
+            user_weights_mean,
+            "User Weights Mean",
+            ax_item_weights_user_means_scatter,
+            user_weights_mean,
+            "User Weights Mean",
+            ax_item_weights_item_means_boxplot,
+            item_weights_mean,
+            "Item Weights Mean",
+            ax_item_weights_item_means_scatter,
+            item_weights_mean,
+            "Item Weights Mean",
+        ],
     ]
 
     num_users, num_items = urm.shape
     for objects in plot_objects:
         (
-            ax_heatmap_color_bar, ax_heatmap, heatmap_data, heatmap_min, heatmap_max, heatmap_title,
-            ax_user_boxplot, user_boxplot_data, user_boxplot_title,
-            ax_user_scatter, user_scatter_data, user_scatter_title,
-            ax_item_boxplot, item_boxplot_data, item_boxplot_title,
-            ax_item_scatter, item_scatter_data, item_scatter_title,
+            ax_heatmap_color_bar,
+            ax_heatmap,
+            heatmap_data,
+            heatmap_min,
+            heatmap_max,
+            heatmap_title,
+            ax_user_boxplot,
+            user_boxplot_data,
+            user_boxplot_title,
+            ax_user_scatter,
+            user_scatter_data,
+            user_scatter_title,
+            ax_item_boxplot,
+            item_boxplot_data,
+            item_boxplot_title,
+            ax_item_scatter,
+            item_scatter_data,
+            item_scatter_title,
         ) = objects
 
         sns.heatmap(
@@ -363,7 +361,7 @@ def _generate_item_weights_with_urm_heatmap(
             x=user_scatter_data,
             color="orange",
             ax=ax_user_scatter,
-            linewidth=0
+            linewidth=0,
         )
 
         sns.boxplot(
@@ -376,7 +374,7 @@ def _generate_item_weights_with_urm_heatmap(
             y=item_scatter_data,
             color="red",
             ax=ax_item_scatter,
-            linewidth=0
+            linewidth=0,
         )
 
         ax_heatmap.set_xlabel("Item Ids")
@@ -399,9 +397,7 @@ def _generate_item_weights_with_urm_heatmap(
     for key, value in plot_title_extras.items():
         plot_title += f"\n* {key}={value}"
 
-    fig.suptitle(
-        t=plot_title
-    )
+    fig.suptitle(t=plot_title)
     fig.tight_layout()
 
     plt.savefig(plot_filename)
@@ -423,44 +419,44 @@ def generate_training_item_weights_plot(
     plot_title_extras: dict[str, str],
 ) -> None:
     """
-         The plot is expected to be something like this. It is divided in a 3x2 square where
-          * The URM heatmap color-bar goes in 0,2
-          * The Item-Weights heatmap color-bar goes in 0,3
+    The plot is expected to be something like this. It is divided in a 3x2 square where
+     * The URM heatmap color-bar goes in 0,2
+     * The Item-Weights heatmap color-bar goes in 0,3
 
-          * The URM heatmap goes in 1,2
-          * The Item-Weights heatmap goes in 1,3
+     * The URM heatmap goes in 1,2
+     * The Item-Weights heatmap goes in 1,3
 
-          * The URM User-Popularity Boxplot goes in 1,0
-          * The URM User-Popularity Scatter plot goes in 1,1
-          * The URM Item-Popularity Boxplot goes in 2,2
-          * The URM Item-Popularity Scatter plot goes in 3,2
+     * The URM User-Popularity Boxplot goes in 1,0
+     * The URM User-Popularity Scatter plot goes in 1,1
+     * The URM Item-Popularity Boxplot goes in 2,2
+     * The URM Item-Popularity Scatter plot goes in 3,2
 
-          * The Item-Weights User-scores Boxplot goes in 1,5
-          * The Item-Weights User-scores Scatter plot goes in 1,4
-          * The Item-Weights Item-scores Boxplot goes in 2,3
-          * The Item-Weights Item-scores Scatter plot goes in 3,3
+     * The Item-Weights User-scores Boxplot goes in 1,5
+     * The Item-Weights User-scores Scatter plot goes in 1,4
+     * The Item-Weights Item-scores Boxplot goes in 2,3
+     * The Item-Weights Item-scores Scatter plot goes in 3,3
 
-          * E represent empty cells of the map.
+     * E represent empty cells of the map.
 
-               0           1           2            3            4           5
-           -----------------------------------------------------------------------
-         0 |   E      |   E      |  URM       | Item-Weights |   E     |   E      |
-           |   E      |   E      |  color-bar | color-bar    |   E     |   E      |
-           |__________|__________|____________|______________|_________|__________|
-           | User-Pop | User-Pop |  URM       | Item-Weights | User-W  | User-W   |
-           | Boxplot  | Scatter  |  Heatmap   | Heatmap      | Scatter | Boxplot  |
-           |          |          |            |              |         |          |
-         1 |          |          |            |              |         |          |
-           |          |          |            |              |         |          |
-           |          |          |            |              |         |          |
-           |__________|__________|____________|______________|_________|__________|
-         2 |   E      |   E      |  Item-Pop  |  Item-Weight |   E     |   E      |
-           |   E      |   E      |   Scatter  |  Scatter     |   E     |   E      |
-           |__________|__________|____________|______________|_________|__________|
-         3 |   E      |   E      |  Item-Pop  |  Item-Weight |   E     |   E      |
-           |   E      |   E      |   Boxplot  |  Boxplot     |   E     |   E      |
-           |__________|__________|____________|______________|_________|__________|
-        """
+          0           1           2            3            4           5
+      -----------------------------------------------------------------------
+    0 |   E      |   E      |  URM       | Item-Weights |   E     |   E      |
+      |   E      |   E      |  color-bar | color-bar    |   E     |   E      |
+      |__________|__________|____________|______________|_________|__________|
+      | User-Pop | User-Pop |  URM       | Item-Weights | User-W  | User-W   |
+      | Boxplot  | Scatter  |  Heatmap   | Heatmap      | Scatter | Boxplot  |
+      |          |          |            |              |         |          |
+    1 |          |          |            |              |         |          |
+      |          |          |            |              |         |          |
+      |          |          |            |              |         |          |
+      |__________|__________|____________|______________|_________|__________|
+    2 |   E      |   E      |  Item-Pop  |  Item-Weight |   E     |   E      |
+      |   E      |   E      |   Scatter  |  Scatter     |   E     |   E      |
+      |__________|__________|____________|______________|_________|__________|
+    3 |   E      |   E      |  Item-Pop  |  Item-Weight |   E     |   E      |
+      |   E      |   E      |   Boxplot  |  Boxplot     |   E     |   E      |
+      |__________|__________|____________|______________|_________|__________|
+    """
     (
         training_item_weights_heatmap_with_means_filename,
         frames_training_item_weights_heatmap_with_means_base_path,
@@ -475,30 +471,21 @@ def generate_training_item_weights_plot(
     normalizes = [True, False]
     gif_filenames = [
         norm_training_item_weights_heatmap_with_means_filename,
-        training_item_weights_heatmap_with_means_filename
+        training_item_weights_heatmap_with_means_filename,
     ]
     plot_file_base_paths = [
         frames_norm_training_item_weights_heatmap_with_means_base_path,
-        frames_training_item_weights_heatmap_with_means_base_path
+        frames_training_item_weights_heatmap_with_means_base_path,
     ]
 
     for normalize, gif_filename, plot_base_path in zip(
-        normalizes,
-        gif_filenames,
-        plot_file_base_paths
+        normalizes, gif_filenames, plot_file_base_paths
     ):
         if os.path.exists(gif_filename):
-            logger.warning(
-                f"Skipping plot {gif_filename} because it already exists."
-            )
+            logger.warning(f"Skipping plot {gif_filename} because it already exists.")
             continue
 
-        epochs = sorted(
-            map(
-                lambda x: int(x),
-                training_item_weights.keys()
-            )
-        )
+        epochs = sorted(map(lambda x: int(x), training_item_weights.keys()))
         filenames = []
 
         for epoch in epochs:
@@ -535,7 +522,7 @@ def generate_training_item_weights_plot(
                 plot_filename=plot_filename,
             )
 
-        with imageio.get_writer(gif_filename, mode='I') as writer:
+        with imageio.get_writer(gif_filename, mode="I") as writer:
             for filename in filenames:
                 image = imageio.imread(filename)
                 writer.append_data(image)
@@ -563,47 +550,47 @@ def generate_item_weights_plot(
     plot_title_extras: dict[str, str],
 ) -> None:
     """
-     The plot is expected to be something like this. It is divided in a 3x2 square where
-      * The URM heatmap color-bar goes in 0,2
-      * The Item-Weights heatmap color-bar goes in 0,3
+    The plot is expected to be something like this. It is divided in a 3x2 square where
+     * The URM heatmap color-bar goes in 0,2
+     * The Item-Weights heatmap color-bar goes in 0,3
 
-      * The URM heatmap goes in 1,2
-      * The Item-Weights heatmap goes in 1,3
+     * The URM heatmap goes in 1,2
+     * The Item-Weights heatmap goes in 1,3
 
-      * The URM User-Popularity Boxplot goes in 1,0
-      * The URM User-Popularity Scatter plot goes in 1,1
-      * The URM Item-Popularity Boxplot goes in 2,2
-      * The URM Item-Popularity Scatter plot goes in 3,2
+     * The URM User-Popularity Boxplot goes in 1,0
+     * The URM User-Popularity Scatter plot goes in 1,1
+     * The URM Item-Popularity Boxplot goes in 2,2
+     * The URM Item-Popularity Scatter plot goes in 3,2
 
-      * The Item-Weights User-scores Boxplot goes in 1,5
-      * The Item-Weights User-scores Scatter plot goes in 1,4
-      * The Item-Weights Item-scores Boxplot goes in 2,3
-      * The Item-Weights Item-scores Scatter plot goes in 3,3
+     * The Item-Weights User-scores Boxplot goes in 1,5
+     * The Item-Weights User-scores Scatter plot goes in 1,4
+     * The Item-Weights Item-scores Boxplot goes in 2,3
+     * The Item-Weights Item-scores Scatter plot goes in 3,3
 
-      * E represent empty cells of the map.
+     * E represent empty cells of the map.
 
-           0           1           2            3            4           5
-       -----------------------------------------------------------------------
-     0 |   E      |   E      |  URM       | Item-Weights |   E     |   E      |
-       |   E      |   E      |  color-bar | color-bar    |   E     |   E      |
-       |__________|__________|____________|______________|_________|__________|
-       | User-Pop | User-Pop |  URM       | Item-Weights | User-W  | User-W   |
-       | Boxplot  | Scatter  |  Heatmap   | Heatmap      | Scatter | Boxplot  |
-       |          |          |            |              |         |          |
-     1 |          |          |            |              |         |          |
-       |          |          |            |              |         |          |
-       |          |          |            |              |         |          |
-       |__________|__________|____________|______________|_________|__________|
-     2 |   E      |   E      |  Item-Pop  |  Item-Weight |   E     |   E      |
-       |   E      |   E      |   Scatter  |  Scatter     |   E     |   E      |
-       |__________|__________|____________|______________|_________|__________|
-     3 |   E      |   E      |  Item-Pop  |  Item-Weight |   E     |   E      |
-       |   E      |   E      |   Boxplot  |  Boxplot     |   E     |   E      |
-       |__________|__________|____________|______________|_________|__________|
+          0           1           2            3            4           5
+      -----------------------------------------------------------------------
+    0 |   E      |   E      |  URM       | Item-Weights |   E     |   E      |
+      |   E      |   E      |  color-bar | color-bar    |   E     |   E      |
+      |__________|__________|____________|______________|_________|__________|
+      | User-Pop | User-Pop |  URM       | Item-Weights | User-W  | User-W   |
+      | Boxplot  | Scatter  |  Heatmap   | Heatmap      | Scatter | Boxplot  |
+      |          |          |            |              |         |          |
+    1 |          |          |            |              |         |          |
+      |          |          |            |              |         |          |
+      |          |          |            |              |         |          |
+      |__________|__________|____________|______________|_________|__________|
+    2 |   E      |   E      |  Item-Pop  |  Item-Weight |   E     |   E      |
+      |   E      |   E      |   Scatter  |  Scatter     |   E     |   E      |
+      |__________|__________|____________|______________|_________|__________|
+    3 |   E      |   E      |  Item-Pop  |  Item-Weight |   E     |   E      |
+      |   E      |   E      |   Boxplot  |  Boxplot     |   E     |   E      |
+      |__________|__________|____________|______________|_________|__________|
     """
     (
         item_weights_heatmap_with_means_filename,
-        norm_item_weights_heatmap_with_means_filename
+        norm_item_weights_heatmap_with_means_filename,
     ) = _get_item_weights_plots_filenames(
         plot_filepath=plot_path,
         norm_plot_filepath=norm_plot_path,
@@ -631,8 +618,7 @@ def generate_item_weights_plot(
         width_cols_ratios = [10, 10, 30, 30, 10, 10]
 
         fig: plt.Figure = plt.figure(
-            figsize=(__FIG_SIZE_WIDTH, __FIG_SIZE_HEIGHT),
-            dpi=__FIG_DPI
+            figsize=(__FIG_SIZE_WIDTH, __FIG_SIZE_HEIGHT), dpi=__FIG_DPI
         )
         gs = plt.GridSpec(
             nrows=num_rows,
@@ -645,42 +631,34 @@ def generate_item_weights_plot(
         ax_urm_heatmap_color_bar: plt.Axes = fig.add_subplot(gs[0, 2])
         ax_item_weights_heatmap_color_bar: plt.Axes = fig.add_subplot(gs[0, 3])
 
-        ax_urm_heatmap: plt.Axes = fig.add_subplot(
-            gs[1, 2]
-        )
+        ax_urm_heatmap: plt.Axes = fig.add_subplot(gs[1, 2])
         ax_item_weights_heatmap: plt.Axes = fig.add_subplot(
-            gs[1, 3],
-            sharex=ax_urm_heatmap,
-            sharey=ax_urm_heatmap
+            gs[1, 3], sharex=ax_urm_heatmap, sharey=ax_urm_heatmap
         )
 
         ax_urm_user_popularity_boxplot: plt.Axes = fig.add_subplot(
             gs[1, 0],
         )
         ax_urm_user_popularity_scatter: plt.Axes = fig.add_subplot(
-            gs[1, 1],
-            sharey=ax_urm_heatmap
+            gs[1, 1], sharey=ax_urm_heatmap
         )
 
         ax_urm_item_popularity_scatter: plt.Axes = fig.add_subplot(
-            gs[2, 2],
-            sharex=ax_urm_heatmap
+            gs[2, 2], sharex=ax_urm_heatmap
         )
         ax_urm_item_popularity_boxplot: plt.Axes = fig.add_subplot(
             gs[3, 2],
         )
 
         ax_item_weights_user_means_scatter: plt.Axes = fig.add_subplot(
-            gs[1, 4],
-            sharey=ax_item_weights_heatmap
+            gs[1, 4], sharey=ax_item_weights_heatmap
         )
         ax_item_weights_user_means_boxplot: plt.Axes = fig.add_subplot(
             gs[1, 5],
         )
 
         ax_item_weights_item_means_scatter: plt.Axes = fig.add_subplot(
-            gs[2, 3],
-            sharex=ax_item_weights_heatmap
+            gs[2, 3], sharex=ax_item_weights_heatmap
         )
         ax_item_weights_item_means_boxplot: plt.Axes = fig.add_subplot(
             gs[3, 3],
@@ -698,7 +676,8 @@ def generate_item_weights_plot(
                 item_weights_heatmap_data = item_weights - heatmap_data_min
             else:
                 item_weights_heatmap_data = (item_weights - heatmap_data_min) / (
-                    heatmap_data_max - heatmap_data_min)
+                    heatmap_data_max - heatmap_data_min
+                )
 
             heatmap_data_min = 0.0
             heatmap_data_max = 1.0
@@ -707,36 +686,77 @@ def generate_item_weights_plot(
             heatmap_data_min = None
             heatmap_data_max = None
 
-        user_weights_mean = np.mean(a=item_weights_heatmap_data, axis=1, dtype=np.float64)
-        item_weights_mean = np.mean(a=item_weights_heatmap_data, axis=0, dtype=np.float64)
+        user_weights_mean = np.mean(
+            a=item_weights_heatmap_data, axis=1, dtype=np.float64
+        )
+        item_weights_mean = np.mean(
+            a=item_weights_heatmap_data, axis=0, dtype=np.float64
+        )
 
         plot_objects = [
             [
-                ax_urm_heatmap_color_bar, ax_urm_heatmap, urm.toarray(), None, None, "User-Rating Matrix",
-                ax_urm_user_popularity_boxplot, user_popularity, "User Popularity",
-                ax_urm_user_popularity_scatter, user_popularity, "User Popularity",
-                ax_urm_item_popularity_boxplot, item_popularity, "Item Popularity",
-                ax_urm_item_popularity_scatter, item_popularity, "Item Popularity",
+                ax_urm_heatmap_color_bar,
+                ax_urm_heatmap,
+                urm.toarray(),
+                None,
+                None,
+                "User-Rating Matrix",
+                ax_urm_user_popularity_boxplot,
+                user_popularity,
+                "User Popularity",
+                ax_urm_user_popularity_scatter,
+                user_popularity,
+                "User Popularity",
+                ax_urm_item_popularity_boxplot,
+                item_popularity,
+                "Item Popularity",
+                ax_urm_item_popularity_scatter,
+                item_popularity,
+                "Item Popularity",
             ],
             [
-                ax_item_weights_heatmap_color_bar, ax_item_weights_heatmap,
-                item_weights_heatmap_data, heatmap_data_min, heatmap_data_max, "User-Item Weights",
-
-                ax_item_weights_user_means_boxplot, user_weights_mean, "User Weights Mean",
-                ax_item_weights_user_means_scatter, user_weights_mean, "User Weights Mean",
-                ax_item_weights_item_means_boxplot, item_weights_mean, "Item Weights Mean",
-                ax_item_weights_item_means_scatter, item_weights_mean, "Item Weights Mean",
-            ]
+                ax_item_weights_heatmap_color_bar,
+                ax_item_weights_heatmap,
+                item_weights_heatmap_data,
+                heatmap_data_min,
+                heatmap_data_max,
+                "User-Item Weights",
+                ax_item_weights_user_means_boxplot,
+                user_weights_mean,
+                "User Weights Mean",
+                ax_item_weights_user_means_scatter,
+                user_weights_mean,
+                "User Weights Mean",
+                ax_item_weights_item_means_boxplot,
+                item_weights_mean,
+                "Item Weights Mean",
+                ax_item_weights_item_means_scatter,
+                item_weights_mean,
+                "Item Weights Mean",
+            ],
         ]
 
         num_users, num_items = urm.shape
         for objects in plot_objects:
             (
-                ax_heatmap_color_bar, ax_heatmap, heatmap_data, heatmap_min, heatmap_max, heatmap_title,
-                ax_user_boxplot, user_boxplot_data, user_boxplot_title,
-                ax_user_scatter, user_scatter_data, user_scatter_title,
-                ax_item_boxplot, item_boxplot_data, item_boxplot_title,
-                ax_item_scatter, item_scatter_data, item_scatter_title,
+                ax_heatmap_color_bar,
+                ax_heatmap,
+                heatmap_data,
+                heatmap_min,
+                heatmap_max,
+                heatmap_title,
+                ax_user_boxplot,
+                user_boxplot_data,
+                user_boxplot_title,
+                ax_user_scatter,
+                user_scatter_data,
+                user_scatter_title,
+                ax_item_boxplot,
+                item_boxplot_data,
+                item_boxplot_title,
+                ax_item_scatter,
+                item_scatter_data,
+                item_scatter_title,
             ) = objects
 
             sns.heatmap(
@@ -759,7 +779,7 @@ def generate_item_weights_plot(
                 x=user_scatter_data,
                 color="orange",
                 ax=ax_user_scatter,
-                linewidth=0
+                linewidth=0,
             )
 
             sns.boxplot(
@@ -772,7 +792,7 @@ def generate_item_weights_plot(
                 y=item_scatter_data,
                 color="red",
                 ax=ax_item_scatter,
-                linewidth=0
+                linewidth=0,
             )
 
             ax_heatmap.set_xlabel("Item Ids")
@@ -800,9 +820,7 @@ def generate_item_weights_plot(
         for key, value in plot_title_extras.items():
             plot_title += f"\n* {key}={value}"
 
-        fig.suptitle(
-            t=plot_title
-        )
+        fig.suptitle(t=plot_title)
         fig.tight_layout()
 
         plt.savefig(
@@ -882,7 +900,8 @@ def generate_item_weights_comparison_plot(
             item_weights_heatmap_data = item_weights - heatmap_data_min
         else:
             item_weights_heatmap_data = (item_weights - heatmap_data_min) / (
-                heatmap_data_max - heatmap_data_min)
+                heatmap_data_max - heatmap_data_min
+            )
 
         return item_weights_heatmap_data
 
@@ -893,7 +912,7 @@ def generate_item_weights_comparison_plot(
     height_rows_ratios = [100]
     width_cols_ratios = [
         *[math.floor(95 / num_recommenders) for _ in range(num_recommenders)],
-        5
+        5,
     ]
 
     fig: plt.Figure = plt.figure(
@@ -907,12 +926,8 @@ def generate_item_weights_comparison_plot(
         width_ratios=width_cols_ratios,
     )
 
-    ax_heatmap_color_bar: plt.Axes = fig.add_subplot(
-        gs[0, -1]
-    )
-    ax_first_recommender: plt.Axes = fig.add_subplot(
-        gs[0, 0]
-    )
+    ax_heatmap_color_bar: plt.Axes = fig.add_subplot(gs[0, -1])
+    ax_first_recommender: plt.Axes = fig.add_subplot(gs[0, 0])
     axs_recommenders: list[plt.Axes] = [
         fig.add_subplot(
             gs[0, x],
@@ -920,21 +935,22 @@ def generate_item_weights_comparison_plot(
         )
         for x in range(1, num_recommenders)
     ]
-    axs_recommenders = [
-        ax_first_recommender,
-        *axs_recommenders
-    ]
+    axs_recommenders = [ax_first_recommender, *axs_recommenders]
 
     heatmap_data_min = 0.0
     heatmap_data_max = 1.0
 
-    for recommender_number, recommender_name, recommender_item_weight, recommender_ax in zip(
+    for (
+        recommender_number,
+        recommender_name,
+        recommender_item_weight,
+        recommender_ax,
+    ) in zip(
         range(0, num_cols),
         recommender_names,
         item_weights,
         axs_recommenders,
     ):
-
         recommender_norm_item_weight = normalize_item_weights(
             item_weights=recommender_item_weight,
         )
@@ -968,9 +984,7 @@ def generate_item_weights_comparison_plot(
 
     fig.tight_layout()
 
-    plt.savefig(
-        f"{norm_item_weights_heatmap_with_means_filename}.png"
-    )
+    plt.savefig(f"{norm_item_weights_heatmap_with_means_filename}.png")
 
     fig.clear()
     plt.close(fig=fig)
@@ -990,8 +1004,8 @@ def generate_epochs_comparison_plot(
     figure_size: FigureSize = FigureSize.ONE_COLUMN_SQUARE,
 ) -> None:
     """
-     The plot is expected to be a bar-plot where in the x-axis we place the recommender names and the y-axis
-     contains the number of training epochs for that recommender.
+    The plot is expected to be a bar-plot where in the x-axis we place the recommender names and the y-axis
+    contains the number of training epochs for that recommender.
     """
     (
         plots_epochs_comparison_filename,
@@ -1009,15 +1023,15 @@ def generate_epochs_comparison_plot(
         )
 
     if len(recommender_names) <= 0:
-        raise ValueError(
-            f"Need at least one recommender to generate epochs comparison"
-        )
+        raise ValueError(f"Need at least one recommender to generate epochs comparison")
 
     for use_log, filename in zip(
         [True, False],
-        [plots_epochs_comparison_log_scale_filename, plots_epochs_comparison_filename]
+        [plots_epochs_comparison_log_scale_filename, plots_epochs_comparison_filename],
     ):
-        if use_log and os.path.exists(plots_epochs_comparison_log_scale_filename + ".pdf"):
+        if use_log and os.path.exists(
+            plots_epochs_comparison_log_scale_filename + ".pdf"
+        ):
             logger.warning(
                 f"Skipping plot {plots_epochs_comparison_log_scale_filename} because "
                 f"it already exists."
@@ -1031,15 +1045,10 @@ def generate_epochs_comparison_plot(
             )
             continue
 
-        fig: plt.Figure = plt.figure(
-            figsize=figure_size.value
-        )
+        fig: plt.Figure = plt.figure(figsize=figure_size.value)
 
         ax_bar_plot: plt.Axes = sns.barplot(
-            y=epochs,
-            x=recommender_names,
-            log=use_log,
-            orient="v"
+            y=epochs, x=recommender_names, log=use_log, orient="v"
         )
         ax_bar_plot.set_xlabel("Recommenders")
         ax_bar_plot.set_ylabel("Training Epochs")
@@ -1047,11 +1056,11 @@ def generate_epochs_comparison_plot(
         for p in ax_bar_plot.patches:
             ax_bar_plot.annotate(
                 text=f"{int(p.get_height())}",
-                xy=(p.get_x() + p.get_width() / 2., p.get_height()),
-                ha='center',
-                va='center',
+                xy=(p.get_x() + p.get_width() / 2.0, p.get_height()),
+                ha="center",
+                va="center",
                 xytext=(0, 2),
-                textcoords='offset points'
+                textcoords="offset points",
             )
 
         if __CONTEXT != "paper":
@@ -1086,9 +1095,12 @@ def generate_losses_plot(
     generator_plots_path: str,
     discriminator_plots_path: str,
     recommender_name: str,
-    plot_title_extras: dict[str, Any]
+    plot_title_extras: dict[str, Any],
 ) -> None:
-    generator_losses_filename, discriminator_losses_filename = _get_losses_plots_filenames(
+    (
+        generator_losses_filename,
+        discriminator_losses_filename,
+    ) = _get_losses_plots_filenames(
         generator_plots_path=generator_plots_path,
         discriminator_plots_path=discriminator_plots_path,
         recommender_name=recommender_name,
@@ -1111,42 +1123,40 @@ def generate_losses_plot(
 
     generator_best_epoch_idx = None
     discriminator_best_epoch_idx = None
-    if ("Best Epoch" in plot_title_extras
+    if (
+        "Best Epoch" in plot_title_extras
         and "Generator #Steps" in plot_title_extras
-        and "Discriminator #Steps" in plot_title_extras):
-        generator_best_epoch_idx = plot_title_extras["Best Epoch"] * plot_title_extras["Generator #Steps"]
-        discriminator_best_epoch_idx = plot_title_extras["Best Epoch"] * plot_title_extras["Discriminator #Steps"]
+        and "Discriminator #Steps" in plot_title_extras
+    ):
+        generator_best_epoch_idx = (
+            plot_title_extras["Best Epoch"] * plot_title_extras["Generator #Steps"]
+        )
+        discriminator_best_epoch_idx = (
+            plot_title_extras["Best Epoch"] * plot_title_extras["Discriminator #Steps"]
+        )
 
     plot_args = [
         (
             generator_plot_title,
             generator_losses_filename,
             generator_losses,
-            generator_best_epoch_idx
+            generator_best_epoch_idx,
         ),
         (
             discriminator_plot_title,
             discriminator_losses_filename,
             discriminator_losses,
-            discriminator_best_epoch_idx
+            discriminator_best_epoch_idx,
         ),
     ]
 
     for plot_title, plot_filename, losses, best_epoch_idx in plot_args:
-
         if os.path.exists(plot_filename):
-            logger.warning(
-                f"Skipping plot {plot_filename} because it already exists."
-            )
+            logger.warning(f"Skipping plot {plot_filename} because it already exists.")
             continue
 
-        fig = plt.figure(
-            figsize=(__FIG_SIZE_WIDTH, __FIG_SIZE_WIDTH),
-            dpi=__FIG_DPI
-        )
-        fig.suptitle(
-            t=plot_title
-        )
+        fig = plt.figure(figsize=(__FIG_SIZE_WIDTH, __FIG_SIZE_WIDTH), dpi=__FIG_DPI)
+        fig.suptitle(t=plot_title)
 
         ax = sns.scatterplot(data=pd.DataFrame(losses))
         ax.set_xlabel("Epochs & Steps")
@@ -1156,9 +1166,9 @@ def generate_losses_plot(
             plt.axvline(
                 best_epoch_idx,
                 color="r",
-                linestyle='--',
+                linestyle="--",
                 linewidth=4.0,
-                label="Best Epoch"
+                label="Best Epoch",
             )
         ax.legend()
 
@@ -1178,44 +1188,37 @@ def generate_similarity_heatmap_plot(
     plot_path: str,
 ) -> None:
     """
-         The plot is expected to be something like this. It is divided in a 3x2 square where
-          * The URM heatmap color-bar goes in row 0
-          * The URM heatmap goes in row 1
+    The plot is expected to be something like this. It is divided in a 3x2 square where
+     * The URM heatmap color-bar goes in row 0
+     * The URM heatmap goes in row 1
 
-          * The URM User-Popularity Boxplot goes in 2,0
-          * The URM User-Popularity Scatter plot goes in 2,1
+     * The URM User-Popularity Boxplot goes in 2,0
+     * The URM User-Popularity Scatter plot goes in 2,1
 
-          * The URM Item-Popularity Boxplot goes in 3,0
-          * The URM Item-Popularity Scatter plot goes in 3,1
+     * The URM Item-Popularity Boxplot goes in 3,0
+     * The URM Item-Popularity Scatter plot goes in 3,1
 
-               0        |    1
-            ------------|------------
-          0 |        URM            |
-            |        color-bar      |
-            |_______________________|
-            |         URM           |
-            |         Heatmap       |
-            |                       |
-          1 |                       |
-            |                       |
-            |                       |
-            |_______________________|
-        """
+          0        |    1
+       ------------|------------
+     0 |        URM            |
+       |        color-bar      |
+       |_______________________|
+       |         URM           |
+       |         Heatmap       |
+       |                       |
+     1 |                       |
+       |                       |
+       |                       |
+       |_______________________|
+    """
     sim_filename, norm_sim_filename = _get_similarity_heatmap_plot_filenames(
         plot_filepath=plot_path,
         similarity_name=similarity_name,
     )
 
-    for normalize, filename in zip(
-        [True, False],
-        [norm_sim_filename, sim_filename]
-    ):
-
+    for normalize, filename in zip([True, False], [norm_sim_filename, sim_filename]):
         if os.path.exists(filename):
-            logger.warning(
-                f"Skipping plot {filename} because "
-                f"it already exists."
-            )
+            logger.warning(f"Skipping plot {filename} because " f"it already exists.")
             return
 
         num_rows = 2
@@ -1224,8 +1227,7 @@ def generate_similarity_heatmap_plot(
         width_cols_ratios = [100]
 
         fig: plt.Figure = plt.figure(
-            figsize=(__FIG_SIZE_WIDTH, __FIG_SIZE_HEIGHT),
-            dpi=__FIG_DPI
+            figsize=(__FIG_SIZE_WIDTH, __FIG_SIZE_HEIGHT), dpi=__FIG_DPI
         )
         gs = plt.GridSpec(
             nrows=num_rows,
@@ -1235,12 +1237,8 @@ def generate_similarity_heatmap_plot(
             width_ratios=width_cols_ratios,
         )
 
-        ax_similarity_heatmap_color_bar: plt.Axes = fig.add_subplot(
-            gs[0, :]
-        )
-        ax_similarity_heatmap: plt.Axes = fig.add_subplot(
-            gs[1, :]
-        )
+        ax_similarity_heatmap_color_bar: plt.Axes = fig.add_subplot(gs[0, :])
+        ax_similarity_heatmap: plt.Axes = fig.add_subplot(gs[1, :])
 
         dense_similarity = similarity.toarray()
         sim_min, sim_max = dense_similarity.min(), dense_similarity.max()
@@ -1274,15 +1272,11 @@ def generate_similarity_heatmap_plot(
 
         ax_similarity_heatmap.set_title(similarity_name)
 
-        plot_title = (
-            f"Heatmap-similarity_name={similarity_name}-normalize={normalize}"
-        )
+        plot_title = f"Heatmap-similarity_name={similarity_name}-normalize={normalize}"
         # for key, value in plot_title_extras.items():
         #    plot_title += f"\n* {key}={value}"
 
-        fig.suptitle(
-            t=plot_title
-        )
+        fig.suptitle(t=plot_title)
         fig.tight_layout()
 
         plt.savefig(filename)
@@ -1304,42 +1298,38 @@ def generate_icm_heatmap_plot(
     plot_path: str,
 ) -> None:
     """
-     The plot is expected to be something like this. It is divided in a 3x2 square where
-      * The URM heatmap color-bar goes in row 0
-      * The URM heatmap goes in row 1
+    The plot is expected to be something like this. It is divided in a 3x2 square where
+     * The URM heatmap color-bar goes in row 0
+     * The URM heatmap goes in row 1
 
-      * The URM User-Popularity Boxplot goes in 2,0
-      * The URM User-Popularity Scatter plot goes in 2,1
+     * The URM User-Popularity Boxplot goes in 2,0
+     * The URM User-Popularity Scatter plot goes in 2,1
 
-      * The URM Item-Popularity Boxplot goes in 3,0
-      * The URM Item-Popularity Scatter plot goes in 3,1
+     * The URM Item-Popularity Boxplot goes in 3,0
+     * The URM Item-Popularity Scatter plot goes in 3,1
 
-           0        |    1
-        ------------|------------
-      0 |        URM            |
-        |        color-bar      |
-        |_______________________|
-        |         URM           |
-        |         Heatmap       |
-        |                       |
-      1 |                       |
-        |                       |
-        |                       |
-        |_______________________|
+          0        |    1
+       ------------|------------
+     0 |        URM            |
+       |        color-bar      |
+       |_______________________|
+       |         URM           |
+       |         Heatmap       |
+       |                       |
+     1 |                       |
+       |                       |
+       |                       |
+       |_______________________|
     """
     icm_heatmap_filename, norm_icm_heatmap_filename = _get_icm_heatmap_plot_filenames(
         plot_filepath=plot_path,
         icm_name=icm_name,
     )
     for normalize, filename in zip(
-        [True, False],
-        [norm_icm_heatmap_filename, icm_heatmap_filename]
+        [True, False], [norm_icm_heatmap_filename, icm_heatmap_filename]
     ):
         if os.path.exists(filename):
-            logger.warning(
-                f"Skipping plot {filename} because "
-                f"it already exists."
-            )
+            logger.warning(f"Skipping plot {filename} because " f"it already exists.")
             return
 
         num_rows = 2
@@ -1348,8 +1338,7 @@ def generate_icm_heatmap_plot(
         width_cols_ratios = [100]
 
         fig: plt.Figure = plt.figure(
-            figsize=(__FIG_SIZE_WIDTH, __FIG_SIZE_HEIGHT),
-            dpi=__FIG_DPI
+            figsize=(__FIG_SIZE_WIDTH, __FIG_SIZE_HEIGHT), dpi=__FIG_DPI
         )
         gs = plt.GridSpec(
             nrows=num_rows,
@@ -1359,12 +1348,8 @@ def generate_icm_heatmap_plot(
             width_ratios=width_cols_ratios,
         )
 
-        ax_icm_heatmap_color_bar: plt.Axes = fig.add_subplot(
-            gs[0, :]
-        )
-        ax_icm_heatmap: plt.Axes = fig.add_subplot(
-            gs[1, :]
-        )
+        ax_icm_heatmap_color_bar: plt.Axes = fig.add_subplot(gs[0, :])
+        ax_icm_heatmap: plt.Axes = fig.add_subplot(gs[1, :])
 
         dense_similarity = icm.toarray()
         sim_min, sim_max = dense_similarity.min(), dense_similarity.max()
@@ -1398,15 +1383,11 @@ def generate_icm_heatmap_plot(
         ax_icm_heatmap.set_ylabel("Item Ids")
         ax_icm_heatmap.set_title(icm_name)
 
-        plot_title = (
-            f"Heatmap-ICM-{icm_name}"
-        )
+        plot_title = f"Heatmap-ICM-{icm_name}"
         # for key, value in plot_title_extras.items():
         #    plot_title += f"\n* {key}={value}"
 
-        fig.suptitle(
-            t=plot_title
-        )
+        fig.suptitle(t=plot_title)
         fig.tight_layout()
 
         plt.savefig(filename)
@@ -1435,35 +1416,28 @@ def generate_accuracy_and_beyond_metrics_latex(
     cutoffs_list: list[int],
     icm_names: Optional[list[str]],
 ) -> None:
-    os.makedirs(
-        export_experiments_folder_path,
-        exist_ok=True
-    )
+    os.makedirs(export_experiments_folder_path, exist_ok=True)
 
     accuracy_metrics_latex_results_filename = os.path.join(
-        export_experiments_folder_path,
-        "accuracy_metrics_latex_results.tex"
+        export_experiments_folder_path, "accuracy_metrics_latex_results.tex"
     )
     beyond_accuracy_metrics_latex_results_filename = os.path.join(
-        export_experiments_folder_path,
-        "beyond_accuracy_metrics_latex_results.tex"
+        export_experiments_folder_path, "beyond_accuracy_metrics_latex_results.tex"
     )
     all_metrics_latex_results_filename = os.path.join(
-        export_experiments_folder_path,
-        "all_metrics_latex_results.tex"
+        export_experiments_folder_path, "all_metrics_latex_results.tex"
     )
     time_latex_results_filename = os.path.join(
-        export_experiments_folder_path,
-        "time_latex_results.tex"
+        export_experiments_folder_path, "time_latex_results.tex"
     )
 
-    result_loader = ResultFolderLoader(
+    result_loader = ExtendedResultFolderLoader(
         experiments_folder_path,
         base_algorithm_list=base_algorithm_list,
         other_algorithm_list=other_algorithm_list,
         KNN_similarity_list=knn_similarity_list,
         ICM_names_list=icm_names,
-        UCM_names_list=None
+        UCM_names_list=None,
     )
 
     result_loader.generate_latex_results(
@@ -1471,7 +1445,7 @@ def generate_accuracy_and_beyond_metrics_latex(
         metrics_list=accuracy_metrics_list,
         cutoffs_list=cutoffs_list,
         table_title=None,
-        highlight_best=False
+        highlight_best=False,
     )
 
     result_loader.generate_latex_results(
@@ -1479,7 +1453,7 @@ def generate_accuracy_and_beyond_metrics_latex(
         metrics_list=beyond_accuracy_metrics_list,
         cutoffs_list=cutoffs_list,
         table_title=None,
-        highlight_best=False
+        highlight_best=False,
     )
 
     result_loader.generate_latex_results(
@@ -1487,17 +1461,17 @@ def generate_accuracy_and_beyond_metrics_latex(
         metrics_list=all_metrics_list,
         cutoffs_list=cutoffs_list,
         table_title=None,
-        highlight_best=False
+        highlight_best=False,
     )
 
     result_loader.generate_latex_time_statistics(
-        time_latex_results_filename,
-        n_evaluation_users=num_test_users,
-        table_title=None
+        time_latex_results_filename, n_evaluation_users=num_test_users, table_title=None
     )
 
 
 import attrs
+
+
 @attrs.define
 class DataFrameResults:
     df_results: pd.DataFrame = attrs.field()
@@ -1518,35 +1492,28 @@ def generate_accuracy_and_beyond_metrics_pandas(
     cutoffs_list: list[int],
     icm_names: Optional[list[str]],
 ) -> DataFrameResults:
-    os.makedirs(
-        export_experiments_folder_path,
-        exist_ok=True
-    )
+    os.makedirs(export_experiments_folder_path, exist_ok=True)
 
     accuracy_metrics_latex_results_filename = os.path.join(
-        export_experiments_folder_path,
-        "accuracy_metrics_latex_results.tex"
+        export_experiments_folder_path, "accuracy_metrics_latex_results.tex"
     )
     beyond_accuracy_metrics_latex_results_filename = os.path.join(
-        export_experiments_folder_path,
-        "beyond_accuracy_metrics_latex_results.tex"
+        export_experiments_folder_path, "beyond_accuracy_metrics_latex_results.tex"
     )
     all_metrics_latex_results_filename = os.path.join(
-        export_experiments_folder_path,
-        "all_metrics_latex_results.tex"
+        export_experiments_folder_path, "all_metrics_latex_results.tex"
     )
     time_latex_results_filename = os.path.join(
-        export_experiments_folder_path,
-        "time_latex_results.tex"
+        export_experiments_folder_path, "time_latex_results.tex"
     )
 
-    result_loader = ResultFolderLoader(
+    result_loader = ExtendedResultFolderLoader(
         experiments_folder_path,
         base_algorithm_list=base_algorithm_list,
         other_algorithm_list=other_algorithm_list,
         KNN_similarity_list=knn_similarity_list,
         ICM_names_list=icm_names,
-        UCM_names_list=None
+        UCM_names_list=None,
     )
 
     df_results = result_loader.get_results_dataframe(
@@ -1559,7 +1526,15 @@ def generate_accuracy_and_beyond_metrics_pandas(
         n_evaluation_users=num_test_users,
     )
 
+    # Returns an error, previously it did not, probably when updating to Pandas 2.0.
     df_hyper_params = result_loader.get_hyperparameters_dataframe()
+    # df_hyper_params = pd.DataFrame(
+    #     data=[],
+    #     columns=["algorithm_row_label", "hyperparameter_name", "hyperparameter_value"],
+    # ).set_index(
+    #     ["algorithm_row_label", "hyperparameter_name"],
+    #     inplace=False,
+    # )
 
     return DataFrameResults(
         df_results=df_results,
