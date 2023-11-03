@@ -1,7 +1,11 @@
 import numpy as np
 import scipy.sparse as sp
 
-from Evaluation.metrics import dcg, _compute_diversity_gini, _compute_diversity_herfindahl
+from Evaluation.metrics import (
+    dcg,
+    _compute_diversity_gini,
+    _compute_diversity_herfindahl,
+)
 from recsys_framework_extensions.sparse.utils import compute_item_popularity_from_urm
 
 py_dcg = dcg
@@ -10,13 +14,11 @@ py_diversity_herfindahl = _compute_diversity_herfindahl
 
 
 def py_average_precision(is_relevant: np.ndarray) -> float:
-
     if len(is_relevant) == 0:
         a_p = 0.0
     else:
         p_at_k = (
-            is_relevant * np.cumsum(is_relevant)
-            / (1 + np.arange(is_relevant.shape[0]))
+            is_relevant * np.cumsum(is_relevant) / (1 + np.arange(is_relevant.shape[0]))
         )
         a_p = np.sum(p_at_k) / is_relevant.shape[0]
 
@@ -35,14 +37,15 @@ def py_precision(is_relevant: np.ndarray) -> float:
 
 
 def py_recall(is_relevant: np.ndarray, pos_items: np.ndarray) -> float:
-
     recall_score: float = np.sum(is_relevant, dtype=np.float64) / pos_items.shape[0]
 
     assert 0 <= recall_score <= 1
     return recall_score
 
 
-def py_prepare_ndcg(ranked_list: np.ndarray, pos_items: np.ndarray, relevance: np.ndarray, at: int):
+def py_prepare_ndcg(
+    ranked_list: np.ndarray, pos_items: np.ndarray, relevance: np.ndarray, at: int
+):
     # Create a dictionary associating item_id to its relevance
     # it2rel[item] -> relevance[item]
     it2rel = dict()
@@ -52,7 +55,7 @@ def py_prepare_ndcg(ranked_list: np.ndarray, pos_items: np.ndarray, relevance: n
     # Creates array of length "at" with the relevance associated to the item in that position
     ranked_relevance = []
     for rec_i in ranked_list:
-        rel = 0.
+        rel = 0.0
         if rec_i in it2rel:
             rel = it2rel[rec_i]
 
@@ -63,7 +66,9 @@ def py_prepare_ndcg(ranked_list: np.ndarray, pos_items: np.ndarray, relevance: n
     return rank_scores
 
 
-def py_ndcg(ranked_list: np.ndarray, pos_items: np.ndarray, relevance: np.ndarray, at: int) -> float:
+def py_ndcg(
+    ranked_list: np.ndarray, pos_items: np.ndarray, relevance: np.ndarray, at: int
+) -> float:
     rank_scores = py_prepare_ndcg(
         ranked_list=ranked_list,
         pos_items=pos_items,
@@ -100,7 +105,7 @@ def py_rr(is_relevant: np.ndarray) -> float:
     ranks = np.arange(1, len(is_relevant) + 1)[is_relevant]
 
     if len(ranks) > 0:
-        return 1. / ranks[0]
+        return 1.0 / ranks[0]
     else:
         return 0.0
 
@@ -140,9 +145,10 @@ def py_arhr_all_hits(is_relevant: np.ndarray) -> float:
     # https://emunix.emich.edu/~sverdlik/COSC562/ItemBasedTopTen.pdf
 
     p_reciprocal = (
-        1 / np.arange(
-            start=1.,
-            stop=len(is_relevant) + 1.,
+        1
+        / np.arange(
+            start=1.0,
+            stop=len(is_relevant) + 1.0,
             step=1.0,
         )
     ).astype(np.float64)
@@ -156,8 +162,8 @@ def py_f1_score_micro_averaged(
     score_precision: float,
     score_recall: float,
 ) -> float:
-    if 0. == score_precision + score_recall:
-        return 0.
+    if 0.0 == score_precision + score_recall:
+        return 0.0
 
     return (2 * score_precision * score_recall) / (score_precision + score_recall)
 
@@ -169,16 +175,14 @@ def py_novelty(
     num_interactions: int,
 ) -> float:
     if recommended_items_ids.size <= 0:
-        return 0.
+        return 0.0
 
     recommended_items_popularity = item_popularity[recommended_items_ids]
 
     probability = recommended_items_popularity / num_interactions
     probability = probability[probability != 0]
 
-    return np.sum(
-        -np.log2(probability) / num_items
-    )
+    return np.sum(-np.log2(probability) / num_items)
 
 
 def py_novelty_train(
@@ -191,7 +195,7 @@ def py_novelty_train(
         urm=urm_train,
     )
 
-    novelty_score = 0.
+    novelty_score = 0.0
 
     for user_id in range(num_users):
         user_profile_start = urm_train.indptr[user_id]
@@ -227,7 +231,9 @@ def py_shannon_entropy(
 
     recommended_probability = recommended_counter / n_recommendations
 
-    shannon_entropy = -np.sum(recommended_probability * np.log2(recommended_probability))
+    shannon_entropy = -np.sum(
+        recommended_probability * np.log2(recommended_probability)
+    )
 
     return shannon_entropy
 
@@ -243,8 +249,24 @@ def py_position_relevant_items(
     is_relevant: np.ndarray,
     cutoff: int,
 ) -> int:
+    """
+
+    Parameters
+    ----------
+    is_relevant : a boolean array that indicates whether any recommended item `i` is relevant to the user or not. Is relevant may be empty indicating no recommendations for a user.
+
+    Returns
+    -------
+
+    """
     assert is_relevant.ndim == 1
-    assert is_relevant.size == cutoff
+    # generates an assert error which I think may be related to some recommendation lists having less items than the
+    # cutoff.
+    # assert is_relevant.size == cutoff
+    if is_relevant.size > cutoff:
+        raise ValueError(
+            f"The function `py_position_relevant_items` needs the `is_relevant` parameter to have the same number of elements as the cutoff. Num received values: is_relevant.size={is_relevant.size} - cutoff={cutoff}"
+        )
 
     arr_bool_is_relevant = np.asarray(is_relevant, dtype=np.bool8)
 
