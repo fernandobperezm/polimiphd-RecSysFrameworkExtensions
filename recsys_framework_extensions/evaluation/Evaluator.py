@@ -318,16 +318,35 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             dtype=np.int32,
         )
 
-        num_batches = 100 if arr_user_ids.size > 100 else 2
+        # We will have in memory a matrix of shape=(num_users_to_evaluate, num_items_in_recommendations), but internally
+        # we create a matrix with shape=(num_users_to_evaluate, num_items).
+        # We want to keep the inner matrix using bytes=desired_batch_size_in_memory.
+        # We will use more as we keep other data structures on memory.
+        num_users, num_items = self.URM_test.shape
+        desired_batch_size_in_memory = 1e9
+        expected_batch_size_in_memory = num_users * num_items * 8
+
+        if expected_batch_size_in_memory <= desired_batch_size_in_memory:
+            num_users_in_batch = 1
+        else:
+            num_users_in_batch = int(desired_batch_size_in_memory // (num_items * 8))
+
+        num_batches = int(num_users // num_users_in_batch)
+
+        logger.debug(
+            f"DEBUG-Evaluation of recommenders-Calculations batch size:"
+            f"\n\t*{num_users=}"
+            f"\n\t*{num_items=}"
+            f"\n\t*{desired_batch_size_in_memory=}"
+            f"\n\t*{expected_batch_size_in_memory=}"
+            f"\n\t*{num_users_in_batch=}"
+            f"\n\t*{num_batches=}"
+        )
 
         arr_user_ids_batches = np.array_split(
             arr_user_ids,
             indices_or_sections=num_batches,
         )
-
-        num_users, num_items = self.URM_test.shape
-
-        logger.info(f"Evaluating recommender.")
 
         dict_cutoff_recommended_item_counters: dict[str, np.ndarray] = {
             cutoff: np.zeros(shape=(num_items,), dtype=np.int32)
@@ -340,6 +359,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
         list_df_results_per_user_batch: list[pd.DataFrame] = []
 
+        logger.info(f"Evaluating recommender.")
         for arr_batch_user_id in tqdm(arr_user_ids_batches):
             list_batch_recommended_items: list[list[int]] = recommender.recommend(
                 arr_batch_user_id,
