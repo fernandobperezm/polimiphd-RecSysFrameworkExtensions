@@ -17,7 +17,6 @@ def _compute_statistics(
     df_keep: pd.DataFrame,
     sparse_matrix: sp.csr_matrix,
 ) -> None:
-
     nonzero_rows, nonzero_cols = sparse_matrix.nonzero()
 
     num_unique_users = np.unique(nonzero_rows).shape[0]
@@ -49,15 +48,11 @@ def assert_mappers_are_equal(
     if mapper_id_to_index == other_mapper_id_to_index:
         return
 
-    differences_not_in_other = set(
-        mapper_id_to_index.items()
-    ).difference(
+    differences_not_in_other = set(mapper_id_to_index.items()).difference(
         other_mapper_id_to_index.items()
     )
 
-    differences_not_in_original = set(
-        other_mapper_id_to_index.items()
-    ).difference(
+    differences_not_in_original = set(other_mapper_id_to_index.items()).difference(
         mapper_id_to_index.items()
     )
 
@@ -121,7 +116,7 @@ def create_sparse_matrix_from_dataframe(
         preinitialized_col_mapper=mapper_item_id_to_index,
         on_new_col="add",
         preinitialized_row_mapper=mapper_user_id_to_index,
-        on_new_row="add"
+        on_new_row="add",
     )
 
     builder_sparse_matrix.add_data_lists(
@@ -136,7 +131,7 @@ def create_sparse_matrix_from_dataframe(
 
     assert_mappers_are_equal(
         mapper_id_to_index=mapper_user_id_to_index,
-        other_mapper_id_to_index=builder_sparse_matrix.get_row_token_to_id_mapper()
+        other_mapper_id_to_index=builder_sparse_matrix.get_row_token_to_id_mapper(),
     )
 
     assert_mappers_are_equal(
@@ -165,7 +160,7 @@ def create_sparse_matrix_from_iter_dataframe(
         preinitialized_col_mapper=mapper_item_id_to_index,
         on_new_col="add",
         preinitialized_row_mapper=mapper_user_id_to_index,
-        on_new_row="add"
+        on_new_row="add",
     )
 
     # Explode item lists so rows can be inserted faster. This may blow up memory.
@@ -177,10 +172,7 @@ def create_sparse_matrix_from_iter_dataframe(
     num_null_rows = 0
     row: pd.DataFrame
     for idx, row in tqdm.tqdm(df.iterrows(), total=df.shape[0]):
-        user = cast(
-            int,
-            row[users_column]
-        )
+        user = cast(int, row[users_column])
         items = cast(
             np.ndarray,
             row[items_column],
@@ -197,9 +189,7 @@ def create_sparse_matrix_from_iter_dataframe(
             data=data,
         )
 
-    df_keep = df[
-        df[items_column].notna()
-    ]
+    df_keep = df[df[items_column].notna()]
 
     df_keep_drop_na = df.dropna(
         axis="index",
@@ -228,7 +218,7 @@ def create_sparse_matrix_from_iter_dataframe(
 
     assert_mappers_are_equal(
         mapper_id_to_index=mapper_user_id_to_index,
-        other_mapper_id_to_index=builder_sparse_matrix.get_row_token_to_id_mapper()
+        other_mapper_id_to_index=builder_sparse_matrix.get_row_token_to_id_mapper(),
     )
 
     assert_mappers_are_equal(
@@ -243,3 +233,35 @@ def create_sparse_matrix_from_iter_dataframe(
     )
 
     return sparse_matrix
+
+
+def ensure_leave_last_k_out_on_test_sparse_matrix(
+    csr_matrix: sp.csr_matrix,
+    k: int,
+    num_users: int,
+    num_items: int,
+) -> None:
+    logger.info(f"Testing whether each user in the matrix has exactly {k} items.")
+    if (num_users, num_items) != csr_matrix.shape:
+        raise ValueError(
+            "Mismatch between the shape of the URM and the number users and items."
+            f" Received values: {num_users=}-{num_items=}-{csr_matrix.shape=}."
+        )
+
+    num_items_per_user = np.ediff1d(csr_matrix.indptr)
+    arr_mask_users_diff_items = num_items_per_user != k
+    if np.any(arr_mask_users_diff_items):
+        users = np.arange(
+            start=0,
+            stop=num_users,
+            step=1,
+        )
+        invalid_users = users[arr_mask_users_diff_items]
+        num_items_invalid_users = num_items_per_user[arr_mask_users_diff_items]
+
+        raise ValueError(
+            f"The following users do not have the required number of items {k=}: "
+            f"{[(u,i) for u,i in zip(invalid_users, num_items_invalid_users)]}"
+        )
+
+    logger.info(f"Each user in the matrix has exactly {k} items.")
