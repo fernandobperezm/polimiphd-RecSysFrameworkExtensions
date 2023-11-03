@@ -86,9 +86,39 @@ class SearchHyperParametersLightGCNRecommender(SearchHyperParametersBaseRecommen
     )
 
 
+@attrs.define(kw_only=True, frozen=True, slots=False)
+class SearchHyperParametersLightGCNRecommenderDEBUG(SearchHyperParametersLightGCNRecommender):
+    epochs: Categorical = attrs.field(
+        default=Categorical(
+            [1500],  # The original paper suggests 1000
+        )
+    )
+    GNN_layers_K: Integer = attrs.field(
+        default=Categorical(  # The original paper limits it to 4
+            [3]
+        )
+    )
+    batch_size: Categorical = attrs.field(
+        default=Categorical(
+            categories=[2048],
+        ),
+    )
+    embedding_size: Integer = attrs.field(
+        default=Categorical(
+            [14],
+        )
+    )
+    sgd_mode: Categorical = attrs.field(
+        default=Categorical(
+            categories=["adam"],
+        )
+    )
+
+
+
 def create_normalized_adjacency_matrix_from_urm(
-        urm: sp.csr_matrix,
-        add_self_connection: bool = False,
+    urm: sp.csr_matrix,
+    add_self_connection: bool = False,
 ) -> sp.coo_matrix:
     """
     This method creates an adjacency matrix where users and items are nodes and edges represent interactions or impressions. Particularly, all edges are directed ones: an edge is created from a user to an item when the user interacted with the item. An edge is created from an item to a user when the item has been impressed to the user.
@@ -105,16 +135,25 @@ def create_normalized_adjacency_matrix_from_urm(
 
 class ExtendedLightGCNModel(torch.nn.Module):
     def __init__(
-            self,
-            adjacency_matrix: sp.coo_matrix,
-            num_users: int,
-            num_items: int,
-            num_layers: int,
-            embedding_size: int,
-            dropout_rate: float,
-            device: torch.device,
+        self,
+        adjacency_matrix: sp.coo_matrix,
+        num_users: int,
+        num_items: int,
+        num_layers: int,
+        embedding_size: int,
+        dropout_rate: float,
+        device: torch.device,
     ):
         super().__init__()
+
+        logger.debug(
+            f"\n\t* {adjacency_matrix=}-{adjacency_matrix.shape=}"
+            f"\n\t* {num_users=}-{type(num_users)=}"
+            f"\n\t* {num_items=}-{type(num_items)=}"
+            f"\n\t* {num_layers=}-{type(num_layers)=}"
+            f"\n\t* {embedding_size=}-{type(embedding_size)=}"
+            f"\n\t* {dropout_rate=}-{type(dropout_rate)=}"
+        )
 
         self.num_layers = num_layers
         self.dropout_rate = dropout_rate
@@ -169,7 +208,7 @@ class ExtendedLightGCNModel(torch.nn.Module):
         return graph
 
     def computer(
-            self,
+        self,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         propagate methods for lightGCN
@@ -210,13 +249,13 @@ class ExtendedLightGCNModel(torch.nn.Module):
             users.long(), pos.long(), neg.long()
         )
         reg_loss = (
-                (1 / 2)
-                * (
-                        userEmb0.norm(2).pow(2)
-                        + posEmb0.norm(2).pow(2)
-                        + negEmb0.norm(2).pow(2)
-                )
-                / float(len(users))
+            (1 / 2)
+            * (
+                userEmb0.norm(2).pow(2)
+                + posEmb0.norm(2).pow(2)
+                + negEmb0.norm(2).pow(2)
+            )
+            / float(len(users))
         )
         pos_scores = torch.mul(users_emb, pos_emb)
         pos_scores = torch.sum(pos_scores, dim=1)
@@ -290,11 +329,11 @@ class ExtendedLightGCNRecommender(
     RECOMMENDER_NAME = "ExtendedLightGCNRecommender"
 
     def __init__(
-            self,
-            urm_train: sp.csr_matrix,
-            use_cython_sampler: bool = True,
-            use_gpu: bool = False,
-            verbose: bool = True,
+        self,
+        urm_train: sp.csr_matrix,
+        use_cython_sampler: bool = True,
+        use_gpu: bool = False,
+        verbose: bool = True,
     ):
         super().__init__(
             URM_train=urm_train,
@@ -302,7 +341,7 @@ class ExtendedLightGCNRecommender(
         )
 
         self.adjacency_matrix = create_normalized_adjacency_matrix_from_urm(
-            urm=urm_train,
+            urm=self.URM_train,
             add_self_connection=False,
         )
 
@@ -342,33 +381,43 @@ class ExtendedLightGCNRecommender(
             self.device = torch.device("cpu:0")
 
     def fit(
-            self,
-            *,
-            epochs: int,
-            GNN_layers_K: int,
-            batch_size: int,
-            embedding_size: int,
-            learning_rate: float,
-            l2_reg: float,
-            dropout_rate: float,
-            sgd_mode: str,
-            **earlystopping_kwargs,
+        self,
+        *,
+        epochs: int,
+        GNN_layers_K: int,
+        batch_size: int,
+        embedding_size: int,
+        learning_rate: float,
+        l2_reg: float,
+        dropout_rate: float,
+        sgd_mode: str,
+        **earlystopping_kwargs,
     ):
-        self.epochs = epochs
+        logger.debug(
+            f"\n\t* {epochs=}-{type(epochs)=}"
+            f"\n\t* {GNN_layers_K=}-{type(GNN_layers_K)=}"
+            f"\n\t* {batch_size=}-{type(batch_size)=}"
+            f"\n\t* {embedding_size=}-{type(embedding_size)=}"
+            f"\n\t* {learning_rate=}-{type(learning_rate)=}"
+            f"\n\t* {l2_reg=}-{type(l2_reg)=}"
+            f"\n\t* {dropout_rate=}-{type(dropout_rate)=}"
+            f"\n\t* {sgd_mode=}-{type(sgd_mode)=}"
+        )
 
-        self.batch_size = batch_size
-        self.embedding_size = embedding_size
-        self.num_layers = GNN_layers_K
+        self.batch_size = int(batch_size)
+        self.embedding_size = int(embedding_size)
+        self.epochs = int(epochs)
+        self.num_layers = int(GNN_layers_K)
 
-        self.dropout_rate = dropout_rate
-        self.learning_rate = learning_rate
-        self.l2_reg = l2_reg
+        self.dropout_rate = float(dropout_rate)
+        self.learning_rate = float(learning_rate)
+        self.l2_reg = float(l2_reg)
 
-        self.sgd_mode = sgd_mode
+        self.sgd_mode = str(sgd_mode)
 
         self._data_iterator = self._data_iterator_class(
             self.URM_train,
-            batch_size=batch_size,
+            batch_size=self.batch_size,
             set_n_samples_to_draw=self.URM_train.nnz,
         )
 
