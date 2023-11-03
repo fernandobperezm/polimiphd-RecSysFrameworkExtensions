@@ -4,6 +4,7 @@ import time
 import attrs
 import numpy as np
 import scipy.sparse as sp
+import sklearn
 from Recommenders.BaseSimilarityMatrixRecommender import (
     BaseItemSimilarityMatrixRecommender,
 )
@@ -21,7 +22,7 @@ from recsys_framework_extensions.recommenders.base import (
 
 
 @attrs.define(kw_only=True, frozen=True, slots=False)
-class SearchHyperParametersP3AlphaRecommender(SearchHyperParametersBaseRecommender):
+class SearchHyperParametersRP3BetaRecommender(SearchHyperParametersBaseRecommender):
     top_k: Integer = attrs.field(
         default=Integer(
             low=5,
@@ -38,6 +39,14 @@ class SearchHyperParametersP3AlphaRecommender(SearchHyperParametersBaseRecommend
             base=10,
         )
     )
+    beta: Real = attrs.field(
+        default=Real(
+            low=0,
+            high=2,
+            prior="uniform",
+            base=10,
+        )
+    )
     normalize_similarity: Real = attrs.field(
         default=Categorical(
             [True, False],
@@ -45,8 +54,8 @@ class SearchHyperParametersP3AlphaRecommender(SearchHyperParametersBaseRecommend
     )
 
 
-class ExtendedP3AlphaRecommender(BaseItemSimilarityMatrixRecommender):
-    RECOMMENDER_NAME = "ExtendedP3AlphaRecommender"
+class ExtendedRP3BetaRecommender(BaseItemSimilarityMatrixRecommender):
+    RECOMMENDER_NAME = "ExtendedRP3BetaRecommender"
 
     def __init__(
         self,
@@ -60,10 +69,14 @@ class ExtendedP3AlphaRecommender(BaseItemSimilarityMatrixRecommender):
         )
         self.p_ui = sp.csr_matrix(
             (self.n_users + self.n_items, self.n_users + self.n_items),
-            dtype=np.float32,
+            dtype=np.int32,
         )
         self.p_iu = sp.csr_matrix(
             (self.n_users + self.n_items, self.n_users + self.n_items),
+            dtype=np.int32,
+        )
+        self.arr_degree = np.zeros(
+            shape=self.n_items,
             dtype=np.float32,
         )
 
@@ -72,20 +85,49 @@ class ExtendedP3AlphaRecommender(BaseItemSimilarityMatrixRecommender):
             dtype=np.float32,
         )
 
-        self.top_k: int = 100
         self.alpha: float = 1.0
+        self.beta: float = 0.6
+        self.top_k: int = 100
         self.normalize_similarity: bool = False
 
     def __str__(
         self,
     ) -> str:
         return (
-            f"ExtendedP3Alpha("
+            f"ExtendedRP3Beta("
             f"alpha={self.alpha}, "
+            f"beta={self.beta}, "
             f"top_k={self.top_k}, "
             f"normalize_similarity={self.normalize_similarity}"
             f")"
         )
+
+    def create_degree_array(
+        self,
+    ):
+        _, num_items = self.URM_train.shape
+
+        X_bool = self.URM_train.transpose(
+            copy=True,
+        )
+        X_bool.data = np.ones(
+            shape=X_bool.data.size,
+            dtype=np.float32,
+        )
+        # Taking the degree of each item to penalize top popular
+        # Some rows might be zero, make sure their degree remains zero
+        X_bool_sum = np.array(X_bool.sum(axis=1)).ravel()
+        non_zero_mask = X_bool_sum != 0.0
+        arr_degree = np.zeros(
+            shape=num_items,
+            dtype=np.float32,
+        )
+        arr_degree[non_zero_mask] = np.power(
+            X_bool_sum[non_zero_mask],
+            -self.beta,
+        )
+
+        self.arr_degree = arr_degree
 
     def create_adjacency_matrix(
         self,
@@ -148,7 +190,9 @@ class ExtendedP3AlphaRecommender(BaseItemSimilarityMatrixRecommender):
             similarity_block = similarity_block.toarray()
 
             for row_in_block in range(block_dim):
-                row_data = similarity_block[row_in_block, :]
+                row_data = np.multiply(
+                    similarity_block[row_in_block, :], self.arr_degree
+                )
                 row_data[current_block_start_row + row_in_block] = 0
 
                 relevant_items_partition = np.argpartition(
@@ -195,13 +239,13 @@ class ExtendedP3AlphaRecommender(BaseItemSimilarityMatrixRecommender):
         w_sparse = similarity_builder.get_SparseMatrix()
 
         if self.normalize_similarity:
-            w_sparse = normalize(
+            w_sparse = sklearn.preprocessing.normalize(
                 w_sparse,
                 norm="l1",
                 axis=1,
             )
 
-        if self.top_k != 0:
+        if self.top_k:
             w_sparse = similarityMatrixTopK(
                 w_sparse,
                 k=self.top_k,
@@ -217,12 +261,15 @@ class ExtendedP3AlphaRecommender(BaseItemSimilarityMatrixRecommender):
         *,
         top_k: int = 100,
         alpha: float = 1.0,
+        beta: float = 0.6,
         normalize_similarity: bool = False,
         **kwargs,
     ) -> None:
         self.top_k = int(top_k)
         self.alpha = float(alpha)
+        self.beta = float(beta)
         self.normalize_similarity = bool(normalize_similarity)
 
         self.create_adjacency_matrix()
+        self.create_degree_array()
         self.create_similarity_matrix()
