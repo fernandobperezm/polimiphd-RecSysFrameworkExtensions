@@ -36,28 +36,16 @@ def _compute_statistics(
     df_orig: pd.DataFrame,
     df_keep: pd.DataFrame,
     df_removed: pd.DataFrame,
-    **func_kwargs
+    **func_kwargs,
 ) -> None:
     columns = ["user_id", "item_id", "impression_id"]
 
     statistics: dict[str, dict[str, Any]] = {
         **func_kwargs,
-        "original_dataset": {
-            column: {}
-            for column in columns
-        },
-        "new_dataset": {
-            column: {}
-            for column in columns
-        },
-        "affected_dataset": {
-            column: {}
-            for column in columns
-        },
-        "removed": {
-            column: {}
-            for column in columns
-        },
+        "original_dataset": {column: {} for column in columns},
+        "new_dataset": {column: {} for column in columns},
+        "affected_dataset": {column: {} for column in columns},
+        "removed": {column: {} for column in columns},
     }
 
     for column in columns:
@@ -78,26 +66,28 @@ def _compute_statistics(
         percentage_affected_column = (num_affected_column / num_total_column) * 100
         percentage_removed_column = (num_removed_column / num_total_column) * 100
 
-        statistics["original_dataset"][column]["str"] = (
-            f"\n\t* # {column}: {num_total_column} (100%)"
-        )
+        statistics["original_dataset"][column][
+            "str"
+        ] = f"\n\t* # {column}: {num_total_column} (100%)"
         statistics["original_dataset"][column]["num"] = num_total_column
 
-        statistics["new_dataset"][column]["str"] = (
-            f"\n\t* # {column}: {num_keep_column}/{num_total_column} ({percentage_keep_column:.2f}%)"
-        )
+        statistics["new_dataset"][column][
+            "str"
+        ] = f"\n\t* # {column}: {num_keep_column}/{num_total_column} ({percentage_keep_column:.2f}%)"
         statistics["new_dataset"][column]["num"] = num_keep_column
         statistics["new_dataset"][column]["percentage"] = percentage_keep_column
 
-        statistics["affected_dataset"][column]["str"] = (
-            f"\n\t* # {column}: {num_affected_column}/{num_total_column} ({percentage_affected_column:.2f}%)"
-        )
+        statistics["affected_dataset"][column][
+            "str"
+        ] = f"\n\t* # {column}: {num_affected_column}/{num_total_column} ({percentage_affected_column:.2f}%)"
         statistics["affected_dataset"][column]["num"] = num_affected_column
-        statistics["affected_dataset"][column]["percentage"] = percentage_affected_column
+        statistics["affected_dataset"][column][
+            "percentage"
+        ] = percentage_affected_column
 
-        statistics["removed"][column]["str"] = (
-            f"\n\t* # {column}: {num_removed_column}/{num_total_column} ({percentage_removed_column:.2f}%)"
-        )
+        statistics["removed"][column][
+            "str"
+        ] = f"\n\t* # {column}: {num_removed_column}/{num_total_column} ({percentage_removed_column:.2f}%)"
         statistics["removed"][column]["num"] = num_removed_column
         statistics["removed"][column]["percentage"] = percentage_removed_column
 
@@ -116,27 +106,29 @@ def _compute_statistics(
     statistics["affected_dataset"]["records"] = dict()
     statistics["removed"]["records"] = dict()
 
-    statistics["original_dataset"]["records"]["str"] = (
-        f"\n\t* # Records: {num_total_records} (100%)"
-    )
+    statistics["original_dataset"]["records"][
+        "str"
+    ] = f"\n\t* # Records: {num_total_records} (100%)"
     statistics["original_dataset"]["records"]["num"] = num_total_records
     statistics["original_dataset"]["records"]["percentage"] = 100.0
 
-    statistics["new_dataset"]["records"]["str"] = (
-        f"\n\t* # Records: {num_keep_records}/{num_total_records} ({percentage_keep_records:.2f}%)"
-    )
+    statistics["new_dataset"]["records"][
+        "str"
+    ] = f"\n\t* # Records: {num_keep_records}/{num_total_records} ({percentage_keep_records:.2f}%)"
     statistics["new_dataset"]["records"]["num"] = num_keep_records
     statistics["new_dataset"]["records"]["percentage"] = percentage_keep_records
 
-    statistics["affected_dataset"]["records"]["str"] = (
-        f"\n\t* # Records: {num_affected_records}/{num_total_records} ({percentage_affected_records:.2f}%)"
-    )
+    statistics["affected_dataset"]["records"][
+        "str"
+    ] = f"\n\t* # Records: {num_affected_records}/{num_total_records} ({percentage_affected_records:.2f}%)"
     statistics["affected_dataset"]["records"]["num"] = num_affected_records
-    statistics["affected_dataset"]["records"]["percentage"] = percentage_affected_records
+    statistics["affected_dataset"]["records"][
+        "percentage"
+    ] = percentage_affected_records
 
-    statistics["removed"]["records"]["str"] = (
-        f"\n\t* # Records: {num_removed_records}/{num_total_records} ({percentage_removed_records:.2f}%)"
-    )
+    statistics["removed"]["records"][
+        "str"
+    ] = f"\n\t* # Records: {num_removed_records}/{num_total_records} ({percentage_removed_records:.2f}%)"
     statistics["removed"]["records"]["num"] = num_removed_records
     statistics["removed"]["records"]["percentage"] = percentage_removed_records
 
@@ -148,19 +140,15 @@ def _compute_statistics(
         f"\nStatistics of the original dataset:"
         f"{statistics['original_dataset']['records']['str']}"
         f"{''.join([statistics['original_dataset'][column]['str'] for column in columns])}"
-        
         f"\nStatistics of the new dataset:"
         f"{statistics['new_dataset']['records']['str']}"
         f"{''.join([statistics['new_dataset'][column]['str'] for column in columns])}"
-        
         f"\nStatistics of the affected dataset:"
         f"{statistics['affected_dataset']['records']['str']}"
         f"{''.join([statistics['affected_dataset'][column]['str'] for column in columns])}"
-        
         f"\nStatistics of the removed information:"
         f"{statistics['removed']['records']['str']}"
         f"{''.join([statistics['removed'][column]['str'] for column in columns])}"
-        
         f"\nStatistics dict: "
         f"\n\t* {statistics=}"
     )
@@ -172,7 +160,7 @@ def _compute_statistics_impressions(
     df_orig: pd.DataFrame,
     df_keep: pd.DataFrame,
     df_removed: pd.DataFrame,
-    **func_kwargs
+    **func_kwargs,
 ) -> None:
     num_total_records = df_orig.shape[0]
 
@@ -180,7 +168,9 @@ def _compute_statistics_impressions(
     percentage_keep_records = (num_keep_records / num_total_records) * 100
 
     num_records_with_repeated_interactions = df_removed.shape[0]
-    percentage_records_with_repeated_interactions = (num_records_with_repeated_interactions / num_total_records) * 100
+    percentage_records_with_repeated_interactions = (
+        num_records_with_repeated_interactions / num_total_records
+    ) * 100
 
     num_removed_records = num_total_records - num_keep_records
     percentage_removed_records = (num_removed_records / num_total_records) * 100
@@ -252,11 +242,7 @@ def remove_duplicates_in_interactions(
             f"duplicates. Number of unique values in the index: {num_unique_indices}. Number of indices: {num_indices}"
         )
 
-    keep_val = (
-        None
-        if keep is None
-        else keep.value
-    )
+    keep_val = None if keep is None else keep.value
 
     df_without_duplicates = df.drop_duplicates(
         subset=columns_to_compare,
@@ -287,7 +273,7 @@ def remove_users_without_min_number_of_interactions(
     users_column: str,
     min_number_of_interactions: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """ Removes from a dataframe those users without a certain number of interactions_exploded.
+    """Removes from a dataframe those users without a certain number of interactions_exploded.
 
     Returns
     -------
@@ -321,17 +307,13 @@ def remove_users_without_min_number_of_interactions(
         as_index=False,
     )[users_column].size()
 
-    users_to_keep = grouped_df[
-        grouped_df["size"] >= min_number_of_interactions
-        ][users_column]
+    users_to_keep = grouped_df[grouped_df["size"] >= min_number_of_interactions][
+        users_column
+    ]
 
-    df_users_to_keep = df[
-        df[users_column].isin(users_to_keep)
-    ].copy()
+    df_users_to_keep = df[df[users_column].isin(users_to_keep)].copy()
 
-    df_removed_users = df.drop(
-        df_users_to_keep.index
-    )
+    df_removed_users = df.drop(df_users_to_keep.index)
 
     _compute_statistics(
         func_name="remove_users_without_min_number_of_interactions",
@@ -349,7 +331,9 @@ def filter_impressions_by_interactions_index(
     df_impressions: pd.DataFrame,
     df_interactions: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    indices_in_interactions_outside_impressions = set(df_interactions.index).difference(df_impressions.index)
+    indices_in_interactions_outside_impressions = set(df_interactions.index).difference(
+        df_impressions.index
+    )
     if len(indices_in_interactions_outside_impressions) > 0:
         raise AssertionError(
             f"This function needs the interaction indices to be a subset of the impression indices, this is because "
@@ -407,9 +391,7 @@ def filter_dataframe_by_column(
     # (e.g., df_impressions_filtered.join(other=df_interactions_filtered)), but given that the interactions have
     # several repeated indices (given that we exploded it before), then a join would create repeated impressions
     # records.
-    df_keep = df_to_filter[
-        df_to_filter[column].isin(df_filterer[column])
-    ].copy()
+    df_keep = df_to_filter[df_to_filter[column].isin(df_filterer[column])].copy()
 
     df_removed = df_to_filter.drop(
         df_keep.index,
@@ -495,10 +477,7 @@ def remove_records_na(
     -----
     This method preserves the original indices.
     """
-    df_filter_to_keep = cast(
-        pd.Series,
-        df[column].notna()
-    )
+    df_filter_to_keep = cast(pd.Series, df[column].notna())
 
     df_keep = df[df_filter_to_keep].copy()
     df_removed = df[~df_filter_to_keep].copy()
@@ -599,10 +578,7 @@ def split_sequential_train_test_by_column_threshold(
     -----
     This method preserves the original indices.
     """
-    df_filter = cast(
-        pd.Series,
-        df[column] <= threshold
-    )
+    df_filter = cast(pd.Series, df[column] <= threshold)
 
     df_train = df[df_filter].copy()
     df_test = df[~df_filter].copy()
@@ -699,10 +675,16 @@ def split_sequential_train_test_by_num_records_on_test(
         n=list(nths_to_take),
     ).copy()
 
-    df_train = df.drop(
-        df_test.index,
-        inplace=False
-    ).copy()
+    df_train = df.drop(df_test.index, inplace=False).copy()
+
+    # Assert there is only `num_records_in_test` interaction per every user on the test set.
+    # creates dataframe with index name `group_by_column` and a single column called `count`.
+    ensure_num_records_on_dataframe(
+        df=df_test,
+        num_records=num_records_in_test,
+        users_column=group_by_column,
+        items_column=None,
+    )
 
     _compute_statistics(
         func_name="split_sequential_train_test_by_num_records_on_test",
@@ -715,6 +697,57 @@ def split_sequential_train_test_by_num_records_on_test(
     )
 
     return df_train, df_test
+
+
+def ensure_num_records_on_dataframe(
+    df: pd.DataFrame,
+    num_records: int,
+    users_column: str,
+    items_column: Optional[str],
+) -> None:
+    """ """
+    # We explode to catch those cases where the item's column has a list of items instead of a single item (hence, making the user appear once but in reality having more than one interaction).
+    if items_column is not None:
+        df = df[[users_column, items_column]].explode(
+            column=items_column,
+            ignore_index=True,
+        )
+
+    df_count_interactions_per_user = (
+        df[users_column]
+        .value_counts(
+            normalize=False,
+            ascending=False,
+            sort=False,
+            dropna=False,
+        )
+        .to_frame()
+        .reset_index(
+            drop=False,
+        )
+    )
+
+    df_users_with_different_number_of_expected_records = df_count_interactions_per_user[
+        df_count_interactions_per_user["count"] != num_records
+    ]
+    df_records_with_failing_users = df[
+        df[users_column].isin(
+            df_users_with_different_number_of_expected_records[users_column]
+        )
+    ]
+
+    test_passed = df_users_with_different_number_of_expected_records.shape[0] == 0
+
+    logger.debug(
+        f"TESTING LEAVE-K-OUT-SPLIT WORKS CORRECTLY ON TEST DATAFRAME."
+        f"\n\t*{num_records=}"
+        f"\n\t*{test_passed=}"
+        f"\n\t*df=\n{df}"
+        f"\n\t*df_count_interactions_per_user=\n{df_count_interactions_per_user}"
+        f"\n\t*df_users_with_different_number_of_expected_records=\n{df_users_with_different_number_of_expected_records}"
+        f"\n\t*df_records_with_failing_users=\n{df_records_with_failing_users}"
+    )
+    assert test_passed
 
 
 def randomly_sample_by_column_values(
@@ -766,9 +799,7 @@ def randomly_sample_by_column_values(
             p=None,  # This ensures uniformly-sampled values.
         )
 
-        df_keep = df[
-            df[column].isin(unique_values_to_keep)
-        ].copy()
+        df_keep = df[df[column].isin(unique_values_to_keep)].copy()
 
         df_removed = df.drop(
             df_keep.index,
