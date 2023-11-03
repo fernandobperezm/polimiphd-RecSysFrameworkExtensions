@@ -25,6 +25,11 @@ class SearchHyperParametersBaseRecommender(abc.ABC):
     pass
 
 
+@attrs.define(kw_only=True, frozen=True, slots=False)
+class FitParametersBaseRecommender(abc.ABC):
+    pass
+
+
 class AbstractExtendedBaseRecommender(MixinLoadModel, BaseRecommender, abc.ABC):
     @abc.abstractmethod
     def __init__(self, urm_train: sp.csr_matrix, **kwargs):
@@ -40,7 +45,7 @@ class AbstractExtendedBaseRecommender(MixinLoadModel, BaseRecommender, abc.ABC):
 
     @abc.abstractmethod
     def validate_load_trained_recommender(self, *args, **kwargs) -> None:
-       ...
+        ...
 
     # @classmethod
     # def load_trained_recommender(
@@ -69,7 +74,9 @@ class AbstractExtendedBaseRecommender(MixinLoadModel, BaseRecommender, abc.ABC):
     #     )
 
 
-_RecommenderExtendedInstance = TypeVar("_RecommenderExtendedInstance", bound=AbstractExtendedBaseRecommender)
+_RecommenderExtendedInstance = TypeVar(
+    "_RecommenderExtendedInstance", bound=AbstractExtendedBaseRecommender
+)
 _RecommenderBaseInstance = TypeVar("_RecommenderBaseInstance", bound=BaseRecommender)
 
 
@@ -92,7 +99,9 @@ def load_extended_recommender(
         )
         recommender_instance.validate_load_trained_recommender()
     except Exception as e:
-        logger.exception(f"Could not load recommender {recommender_class} with \n\t* {args=} \n\t* {kwargs=}")
+        logger.exception(
+            f"Could not load recommender {recommender_class} with \n\t* {args=} \n\t* {kwargs=}"
+        )
         return None
 
     return recommender_instance
@@ -111,8 +120,10 @@ def load_recsys_framework_recommender(
         recommender_name = recommender_class.RECOMMENDER_NAME
         if issubclass(recommender_class, (ItemKNNCFRecommender, UserKNNCFRecommender)):
             if similarity is None or similarity == "":
-                raise ValueError(f"Received an empty similarity when expecting a similarity value. Accepted values are ["
-                                 f"{['cosine', 'tversky', 'asymmetric', 'jaccard', 'dice']}")
+                raise ValueError(
+                    f"Received an empty similarity when expecting a similarity value. Accepted values are ["
+                    f"{['cosine', 'tversky', 'asymmetric', 'jaccard', 'dice']}"
+                )
 
             recommender_name = f"{recommender_class.RECOMMENDER_NAME}_{similarity}"
 
