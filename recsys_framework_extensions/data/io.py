@@ -92,6 +92,8 @@ class ExtendedJSONEncoderDecoder:
             return bool(obj)
         if isinstance(obj, Enum):
             return {"__enum__": str(obj)}
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
 
         # We leave the default JSONEncoder to raise an exception if it cannot serialize something.
         return json.JSONEncoder().default(obj)
