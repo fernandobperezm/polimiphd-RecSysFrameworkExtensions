@@ -18,6 +18,7 @@ from skopt.space import Integer, Real, Categorical
 
 from recsys_framework_extensions.recommenders.base import (
     SearchHyperParametersBaseRecommender,
+    AbstractExtendedBaseRecommender,
 )
 
 
@@ -54,7 +55,9 @@ class SearchHyperParametersRP3BetaRecommender(SearchHyperParametersBaseRecommend
     )
 
 
-class ExtendedRP3BetaRecommender(BaseItemSimilarityMatrixRecommender):
+class ExtendedRP3BetaRecommender(
+    BaseItemSimilarityMatrixRecommender, AbstractExtendedBaseRecommender
+):
     RECOMMENDER_NAME = "ExtendedRP3BetaRecommender"
 
     def __init__(
@@ -273,3 +276,12 @@ class ExtendedRP3BetaRecommender(BaseItemSimilarityMatrixRecommender):
         self.create_adjacency_matrix()
         self.create_degree_array()
         self.create_similarity_matrix()
+
+    def validate_load_trained_recommender(self) -> None:
+        assert hasattr(self, "W_sparse") and self.W_sparse.nnz > 0
+
+        self.W_sparse = check_matrix(
+            X=self.W_sparse,
+            format="csr",
+            dtype=np.float32,
+        )
