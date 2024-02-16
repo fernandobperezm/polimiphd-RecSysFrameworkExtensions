@@ -4,8 +4,8 @@ import os
 import toml
 
 
-with open(os.path.join(os.getcwd(), "pyproject.toml"), "r") as project_file:
-    pyproject_logs_config = toml.load(f=project_file)["logs"]
+with open(os.path.join(os.getcwd(), "pyproject.toml"), "r", encoding="utf-8") as project_file:
+    pyproject_logs_config = toml.load(f=project_file)["tool"]["logging"]
 
 _dir_logger = os.path.join(
     os.getcwd(),

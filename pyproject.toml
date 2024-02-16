@@ -1,4 +1,4 @@
-[logs]
+[tool.logging]
 dir_logs = ".logs"
 filename_logs = "recsys_framework_extensions.log"
 
