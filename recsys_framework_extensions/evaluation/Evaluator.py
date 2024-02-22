@@ -90,7 +90,21 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             EvaluatorMetrics.RATIO_SHANNON_ENTROPY,
             # ExtendedEvaluatorMetrics.POSITION_FIRST_RELEVANT,
         ]
-        self._str_metrics: list[str] = [str(metric.value) for metric in self._metrics]
+        # Only mean-based metrics can be statistically compared.
+        self._metrics_statistical_tests = [
+            EvaluatorMetrics.PRECISION,
+            EvaluatorMetrics.RECALL,
+            EvaluatorMetrics.MAP,
+            EvaluatorMetrics.NDCG,
+            EvaluatorMetrics.MRR,
+            EvaluatorMetrics.HIT_RATE,
+            EvaluatorMetrics.ARHR,
+            EvaluatorMetrics.F1,
+        ]
+        self._str_metrics = [str(metric.value) for metric in self._metrics]
+        self._str_metrics_statistical_tests = [
+            str(metric.value) for metric in self._metrics_statistical_tests
+        ]
 
     def compute_mean_score_on_evaluated_users(
         self,
@@ -525,6 +539,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
     def compute_recommenders_statistical_tests(
         self,
+        *,
+        dataset: str,
         recommender_baseline: BaseRecommender,
         recommender_baseline_name: str,
         recommender_baseline_folder: str,
@@ -546,6 +562,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
         partial_compute_recommenders_statistical_tests = partial(
             self._compute_recommenders_statistical_tests,
+            dataset=dataset,
             recommender_baseline=recommender_baseline,
             recommender_baseline_name=recommender_baseline_name,
             recommender_baseline_folder=recommender_baseline_folder,
@@ -563,6 +580,8 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
 
     def _compute_recommenders_statistical_tests(
         self,
+        *,
+        dataset: str,
         recommender_baseline: BaseRecommender,
         recommender_baseline_name: str,
         recommender_baseline_folder: str,
@@ -597,27 +616,37 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         assert num_other_recommenders >= 1
 
         stats_groupwise = ["friedman"]
-        stats_pairwise = ["wilcoxon", "bonferroni-wilcoxon", "sign", "bonferroni-sign"]
+        stats_pairwise = [
+            "wilcoxon",
+            "wilcoxon_zsplit",
+            "bonferroni-wilcoxon",
+            "bonferroni-wilcoxon_zsplit",
+            "sign",
+            "bonferroni-sign",
+        ]
         inner_stats_groupwise = ["num_measurements", "alpha", "p_value", "hypothesis"]
         inner_stats_pairwise = ["alpha", "p_value", "hypothesis"]
 
         alternatives = [
-            st_tests.StatisticalTestAlternative.TWO_SIDED,
             st_tests.StatisticalTestAlternative.LESS,
+            st_tests.StatisticalTestAlternative.TWO_SIDED,
             st_tests.StatisticalTestAlternative.GREATER,
         ]
         str_alternatives = [alternative.value for alternative in alternatives]
         alphas = [
-            0.1,
+            # 0.1,
             0.05,
-            0.01,
+            # 0.01,
         ]
         str_alphas = [str(alpha) for alpha in alphas]
 
-        columns_groupwise = [("recommender", "", "", "", "", "")]
+        columns_groupwise = [
+            ("dataset", "", "", "", "", ""),
+            ("recommender", "", "", "", "", ""),
+        ]
         columns_groupwise += itertools.product(
             self._str_cutoffs,
-            self._str_metrics,
+            self._str_metrics_statistical_tests,
             stats_groupwise,
             str_alternatives,
             str_alphas,
@@ -625,12 +654,13 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         )
 
         columns_pairwise = [
+            ("dataset", "", "", "", "", ""),
             ("recommender_base", "", "", "", "", ""),
             ("recommender_other", "", "", "", "", ""),
         ]
         columns_pairwise += itertools.product(
             self._str_cutoffs,
-            self._str_metrics,
+            self._str_metrics_statistical_tests,
             stats_pairwise,
             str_alternatives,
             str_alphas,
@@ -638,11 +668,15 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
         )
 
         data_groupwise: dict[tuple, list] = {col: [] for col in columns_groupwise}
+        data_groupwise[("dataset", "", "", "", "", "")].append(dataset)
         data_groupwise[("recommender", "", "", "", "", "")].append(
             recommender_baseline_name
         )
 
         data_pairwise: dict[tuple, list] = {col: [] for col in columns_pairwise}
+        data_pairwise[("dataset", "", "", "", "", "")] += [
+            dataset
+        ] * num_other_recommenders
         data_pairwise[("recommender_base", "", "", "", "", "")] += [
             recommender_baseline_name
         ] * num_other_recommenders
@@ -650,7 +684,9 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             rec_name for rec_name in recommender_others_names
         ]
 
-        for cutoff, metric in itertools.product(self._str_cutoffs, self._str_metrics):
+        for cutoff, metric in itertools.product(
+            self._str_cutoffs, self._str_metrics_statistical_tests
+        ):
             # np.asarray converts the array to shape (# recommenders, # users), the functions need
             # arrays of shape (# users, # recommenders). Hence, we transpose the scores.
             arr_scores_baseline = df_scores_baseline[(cutoff, metric)].to_numpy(
@@ -749,6 +785,44 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                         for res in results_statistical_tests.wilcoxon
                     ]
 
+                    # WILCOXON PAIR-WISE TEST - TIES HANDLED BY ZSPLIT
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "wilcoxon_zsplit",
+                            alternative.value,
+                            str(alpha),
+                            "alpha",
+                        )
+                    ] += [alpha] * num_other_recommenders
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "wilcoxon_zsplit",
+                            alternative.value,
+                            str(alpha),
+                            "p_value",
+                        )
+                    ] += [
+                        res.p_value for res in results_statistical_tests.wilcoxon_zsplit
+                    ]
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "wilcoxon_zsplit",
+                            alternative.value,
+                            str(alpha),
+                            "hypothesis",
+                        )
+                    ] += [
+                        res.hypothesis[idx].value
+                        for res in results_statistical_tests.wilcoxon_zsplit
+                    ]
+
+                    # SIGN TEST
                     data_pairwise[
                         (cutoff, metric, "sign", alternative.value, str(alpha), "alpha")
                     ] += [alpha] * num_other_recommenders
@@ -776,6 +850,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                         for res in results_statistical_tests.sign
                     ]
 
+                    # BONFERRONI CORRECTION TO WILCOXON PAIR-WISE TEST - TIES HANDLED BY WILCOX
                     data_pairwise[
                         (
                             cutoff,
@@ -817,6 +892,49 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                         for h in results_statistical_tests.bonferroni_wilcoxon.hypothesis
                     ]
 
+                    # BONFERRONI CORRECTION TO WILCOXON PAIR-WISE TEST - TIES HANDLED BY ZSPLIT
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-wilcoxon_zsplit",
+                            alternative.value,
+                            str(alpha),
+                            "alpha",
+                        )
+                    ] += [
+                        results_statistical_tests.bonferroni_wilcoxon_zsplit.corrected_alphas[
+                            idx
+                        ]
+                    ] * num_other_recommenders
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-wilcoxon_zsplit",
+                            alternative.value,
+                            str(alpha),
+                            "p_value",
+                        )
+                    ] += [
+                        p_val
+                        for p_val in results_statistical_tests.bonferroni_wilcoxon_zsplit.corrected_p_values
+                    ]
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-wilcoxon_zsplit",
+                            alternative.value,
+                            str(alpha),
+                            "hypothesis",
+                        )
+                    ] += [
+                        h[idx].value
+                        for h in results_statistical_tests.bonferroni_wilcoxon_zsplit.hypothesis
+                    ]
+
+                    # BONFERRONI CORRECTION TO SIGN TEST
                     data_pairwise[
                         (
                             cutoff,

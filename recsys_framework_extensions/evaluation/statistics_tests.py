@@ -1,13 +1,11 @@
-from collections import namedtuple
 from enum import Enum
-from typing import Optional, Sequence, Iterable, Mapping
+import logging
+from typing import Optional, Sequence, Iterable
 
 import attrs
 import numpy as np
 import statsmodels.api as sm
 from scipy import stats
-
-import logging
 
 from scipy.stats._binomtest import BinomTestResult  # type: ignore
 
@@ -58,9 +56,16 @@ class StatisticalTestHypothesis(Enum):
     ALTERNATIVE = "ALTERNATIVE"
 
 
+class WilcoxonTestHandleTies(Enum):
+    WILCOX = "wilcox"
+    PRATT = "pratt"
+    ZSPLIT = "zsplit"
+
+
 class SignTestHandleTies(Enum):
     STRICTLY_GREATER = "STRICTLY_GREATER"
     GREATER_OR_EQUAL = "GREATER_OR_EQUAL"
+    ZSPLIT = "zsplit"  # Same strategy as WilcoxonTestHandleTies.ZSPLIT
 
 
 @attrs.define
@@ -105,8 +110,10 @@ class ResultsBonferroniCorrection:
 class ResultsStatisticalTestsBaseVsOthers:
     friedman: ResultsFriedmanTest = attrs.field()
     bonferroni_wilcoxon: ResultsBonferroniCorrection = attrs.field()
+    bonferroni_wilcoxon_zsplit: ResultsBonferroniCorrection = attrs.field()
     bonferroni_sign: ResultsBonferroniCorrection = attrs.field()
     wilcoxon: Sequence[ResultsWilcoxonTest] = attrs.field()
+    wilcoxon_zsplit: Sequence[ResultsWilcoxonTest] = attrs.field()
     sign: Sequence[ResultsSignTest] = attrs.field()
 
 
@@ -162,12 +169,23 @@ def compute_statistical_tests_of_base_vs_others(
         alphas=alphas,
     )
 
-    results_wilcoxon = [
+    results_wilcoxon_wilcox = [
         _wilcoxon_statistic_test(
             scores_base=scores_base,
             scores_other=scores_others[idx_recommender, :],
             alphas=alphas,
             alternative=alternative,
+            zero_method=WilcoxonTestHandleTies.WILCOX,
+        )
+        for idx_recommender in range(num_other_recommenders)
+    ]
+    results_wilcoxon_zsplit = [
+        _wilcoxon_statistic_test(
+            scores_base=scores_base,
+            scores_other=scores_others[idx_recommender, :],
+            alphas=alphas,
+            alternative=alternative,
+            zero_method=WilcoxonTestHandleTies.ZSPLIT,
         )
         for idx_recommender in range(num_other_recommenders)
     ]
@@ -177,12 +195,17 @@ def compute_statistical_tests_of_base_vs_others(
             scores_other=scores_others[idx_recommender, :],
             alphas=alphas,
             alternative=alternative,
+            handle_ties=SignTestHandleTies.ZSPLIT,
         )
         for idx_recommender in range(num_other_recommenders)
     ]
 
-    p_values_wilcoxon = np.asarray(
-        [res.p_value for res in results_wilcoxon],
+    p_values_wilcoxon_wilcox = np.asarray(
+        [res.p_value for res in results_wilcoxon_wilcox],
+        dtype=np.float64,
+    )
+    p_values_wilcoxon_zsplit = np.asarray(
+        [res.p_value for res in results_wilcoxon_zsplit],
         dtype=np.float64,
     )
     p_values_sign = np.asarray(
@@ -190,8 +213,12 @@ def compute_statistical_tests_of_base_vs_others(
         dtype=np.float64,
     )
 
-    results_bonferroni_wilcoxon = _bonferroni_correction(
-        p_values=p_values_wilcoxon,
+    results_bonferroni_wilcoxon_wilcox = _bonferroni_correction(
+        p_values=p_values_wilcoxon_wilcox,
+        alphas=alphas,
+    )
+    results_bonferroni_wilcoxon_zsplit = _bonferroni_correction(
+        p_values=p_values_wilcoxon_zsplit,
         alphas=alphas,
     )
     results_bonferroni_sign = _bonferroni_correction(
@@ -201,9 +228,11 @@ def compute_statistical_tests_of_base_vs_others(
 
     return ResultsStatisticalTestsBaseVsOthers(
         friedman=results_friedman,
-        wilcoxon=results_wilcoxon,
+        wilcoxon=results_wilcoxon_wilcox,
+        wilcoxon_zsplit=results_wilcoxon_zsplit,
         sign=results_sign,
-        bonferroni_wilcoxon=results_bonferroni_wilcoxon,
+        bonferroni_wilcoxon=results_bonferroni_wilcoxon_wilcox,
+        bonferroni_wilcoxon_zsplit=results_bonferroni_wilcoxon_zsplit,
         bonferroni_sign=results_bonferroni_sign,
     )
 
@@ -213,23 +242,24 @@ def _wilcoxon_statistic_test(
     scores_other: np.ndarray,
     alphas: Sequence[float],
     alternative: StatisticalTestAlternative,
+    zero_method: WilcoxonTestHandleTies,
 ) -> ResultsWilcoxonTest:
     """
 
     Notes
     -----
     alternative="two-sided":
-      H0 is ranks are equal,
-      Ha is ranks are different, but does not tell you which one is better.
+      H0: differences in scores are close to zero,
+      Ha: differences in scores are not close to zero. Does not tell you which one is better.
     alternative="greater":
-      H0 is ranks are better in RO,
-      Ha is ranks are not better in RO.
+      H0: differences in scores are lower than zero.
+      Ha: differences in scores are higher than zero. Means Ro has higher scores than Rb.
     alternative="less":
-      H0 is ranks are better in RB,
-      Ha is ranks are not better in RB.
+      H0: differences in scores are higher than zero.
+      Ha: differences in scores are lower than zero. Means Rb has higher scores than Ro.
     zero_method="wilcox"
       This drops the ranks in which we have ties (score(RB, u) == score(RO, u)) for user u.
-    mode=auto
+    method=auto
       so the test can automatically determine how to calculate the p-value. Per
       default, it changes between "exact" or "approx" if the number of users is higher than 25.
     correction=False
@@ -242,7 +272,59 @@ def _wilcoxon_statistic_test(
         f"\n\t* {scores_other=} - {scores_other.ndim=} - {scores_other.shape=}"
         f"\n\t* {alphas=}"
         f"\n\t* {alternative=}"
+        f"\n\t* {zero_method=}"
     )
+
+    arr_diffs = np.array(scores_other - scores_base, dtype=np.float64)
+    non_zero_scores = np.count_nonzero(arr_diffs)
+
+    arr_nonzero_diffs = arr_diffs[arr_diffs != 0.0]
+    non_zero_scores_arr_non_zero = np.count_nonzero(arr_nonzero_diffs)
+
+    arr_zero_diffs = arr_diffs[arr_diffs == 0.0]
+    non_zero_scores_arr_zero = np.count_nonzero(arr_zero_diffs)
+
+    logger.debug(
+        "Wilcoxon Test differences: scores_other - scores_base"
+        "\n\t* scores_base.ndim=%(scores_base_ndim)s - scores_base.shape=%(scores_base_shape)s"
+        "\n\t* scores_other.ndim=%(scores_other_ndim)s - scores_other.shape=%(scores_other_shape)s"
+        "\n\t* arr_diffs.ndim=%(arr_diffs_ndim)s - arr_diffs.shape=%(arr_diffs_shape)s - non_zero_scores=%(non_zero_scores)s"
+        "\n\t* arr_nonzero_diffs.ndim=%(arr_nonzero_diffs_ndim)s - arr_nonzero_diffs.shape=%(arr_nonzero_diffs_shape)s - non_zero_scores_arr_non_zero=%(non_zero_scores_arr_non_zero)s"
+        "\n\t* arr_zero_diffs.ndim=%(arr_zero_diffs_ndim)s - arr_zero_diffs.shape=%(arr_zero_diffs_shape)s - non_zero_scores_arr_zero=%(non_zero_scores_arr_zero)s",
+        {
+            "scores_base_ndim": scores_base.ndim,
+            "scores_base_shape": scores_base.shape,
+            #
+            "scores_other_ndim": scores_other.ndim,
+            "scores_other_shape": scores_other.shape,
+            #
+            "arr_diffs_ndim": arr_diffs.ndim,
+            "arr_diffs_shape": arr_diffs.shape,
+            "non_zero_scores": non_zero_scores,
+            #
+            "arr_nonzero_diffs_ndim": arr_nonzero_diffs.ndim,
+            "arr_nonzero_diffs_shape": arr_nonzero_diffs.shape,
+            "non_zero_scores_arr_non_zero": non_zero_scores_arr_non_zero,
+            #
+            "arr_zero_diffs_ndim": arr_zero_diffs.ndim,
+            "arr_zero_diffs_shape": arr_zero_diffs.shape,
+            "non_zero_scores_arr_zero": non_zero_scores_arr_zero,
+        },
+    )
+
+    if arr_diffs.shape == arr_zero_diffs.shape:
+        logger.warning(
+            "Cannot compute the Wilcoxon statistical test because the base and other scores are the same."
+        )
+        return ResultsWilcoxonTest(
+            test_statistic=np.nan,
+            p_value=np.nan,
+            hypothesis=[StatisticalTestHypothesis.NULL] * len(alphas),
+            kwargs={
+                "alternative": alternative,
+                "alphas": alphas,
+            },
+        )
 
     # Definition of Wilcoxon Signed-Rank Test extracted from:
     # https://www.jmlr.org/papers/volume7/demsar06a/demsar06a.pdf, section 3.1.3
@@ -253,9 +335,11 @@ def _wilcoxon_statistic_test(
     test_statistic, p_value = stats.wilcoxon(
         x=scores_other,
         y=scores_base,
+        # x=scores_base,  # TODO: DEBUG, DELETE AND UNCOMMENT ABOVE
+        # y=scores_other,  # TODO: DEBUG, DELETE AND UNCOMMENT ABOVE
         alternative=alternative.value,
-        zero_method="zsplit",
-        mode="auto",
+        zero_method=zero_method.value,
+        method="auto",
         correction=False,
     )
 
@@ -276,10 +360,10 @@ def _wilcoxon_statistic_test(
         test_statistic=test_statistic,
         p_value=p_value,
         hypothesis=hypothesis,
-        kwargs=dict(
-            alternative=alternative,
-            alphas=alphas,
-        ),
+        kwargs={
+            "alternative": alternative,
+            "alphas": alphas,
+        },
     )
 
 
@@ -400,6 +484,7 @@ def _sign_test(
     scores_other: np.ndarray,
     alphas: Sequence[float],
     alternative: StatisticalTestAlternative,
+    handle_ties: Optional[SignTestHandleTies] = None,
 ) -> ResultsSignTest:
     """Computes a Sign Statistical Test between the scores of two recommenders.
 
@@ -452,7 +537,7 @@ def _sign_test(
        Recommender Systems Handbook. Springer, Boston, MA. https://doi.org/10.1007/978-1-4899-7637-6_8
 
     .. [2] Demsar, J. (2006). Statistical Comparisons of Classifiers over Multiple Data Sets. J. Mach. Learn. Res., 7,
-       1–30.
+       1-30.
     """
     # Ensure these are 1-D arrays and that both arrays have the same shape.
     assert scores_base.ndim == 1
@@ -512,8 +597,21 @@ def _sign_test(
         dtype=np.int32,
     )
 
-    successes: int = num_times_other_better_than_base + num_times_both_are_equal // 2
-    failures: int = num_times_base_better_than_other + num_times_both_are_equal // 2
+    if handle_ties is None:
+        successes = num_times_other_better_than_base + (num_times_both_are_equal // 2)
+        failures = num_times_base_better_than_other + (num_times_both_are_equal // 2)
+    elif SignTestHandleTies.STRICTLY_GREATER == handle_ties:
+        successes = num_times_other_better_than_base
+        failures = num_times_base_better_than_other + num_times_both_are_equal
+    elif SignTestHandleTies.GREATER_OR_EQUAL == handle_ties:
+        successes = num_times_other_better_than_base + num_times_both_are_equal
+        failures = num_times_base_better_than_other
+    elif SignTestHandleTies.ZSPLIT == handle_ties:
+        successes = num_times_other_better_than_base + (num_times_both_are_equal // 2)
+        failures = num_times_base_better_than_other + (num_times_both_are_equal // 2)
+    else:
+        successes = num_times_other_better_than_base + (num_times_both_are_equal // 2)
+        failures = num_times_base_better_than_other + (num_times_both_are_equal // 2)
 
     assert (
         num_times_both_are_equal % 2 == 0 and successes + failures == num_users
@@ -526,7 +624,6 @@ def _sign_test(
 
     # From v1.8.1 we can use binomtest that returns a set of more comprehensive results.
     # if scipy version is lower, then we have to use binom_test which only returns the computed alpha
-
     # Sign test as defined by: https://www.jmlr.org/papers/volume7/demsar06a/demsar06a.pdf
     # In particular, both recommenders are considered to win in 50% of the cases.
     # Ties are not discounted but added between the successes and failures, if the num of ties is odd,
@@ -557,12 +654,12 @@ def _sign_test(
         num_times_base_better_than_other=num_times_base_better_than_other,
         num_times_other_better_than_base=num_times_other_better_than_base,
         num_times_both_are_equal=num_times_both_are_equal,
-        kwargs=dict(
-            alphas=alphas,
-            alternative=alternative,
-            statistic=statistic,
-            confidence_interval=confidence_interval,
-        ),
+        kwargs={
+            "alphas": alphas,
+            "alternative": alternative,
+            "statistic": statistic,
+            "confidence_interval": confidence_interval,
+        },
     )
 
 
