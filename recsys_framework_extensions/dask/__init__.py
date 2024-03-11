@@ -39,7 +39,7 @@ class DaskInterface:
         self._client = client
         self._config = config
         self._job_futures: list[Future] = []
-        self._job_futures_info: dict[str, dict[str, Any]] = dict()
+        self._job_futures_info: dict[str, dict[str, Any]] = {}
         self._is_closed: bool = False
 
     @property
@@ -118,9 +118,11 @@ class DaskInterface:
 
 
 def _load_logger_config() -> DaskConfig:
-    with open(os.path.join(os.getcwd(), "pyproject.toml"), "r") as project_file:
+    with open(
+        os.path.join(os.getcwd(), "pyproject.toml"), "r", encoding="utf-8"
+    ) as project_file:
         config = toml.load(f=project_file)
-    dask_config = DaskConfig(**config["dask"])
+    dask_config = DaskConfig(**config["tool"]["dask"])
     return dask_config
 
 
@@ -192,20 +194,30 @@ def configure_dask_cluster() -> DaskInterface:
         scheduler_address=scheduler_address, scheduler_port=config.scheduler_port
     ):
         logger.info(
-            f"Connecting to already-created scheduler at {scheduler_address}:{config.scheduler_port}"
+            "Connecting to already-created scheduler at %(scheduler_address)s:%(scheduler_port)s",
+            {
+                "scheduler_address": scheduler_address,
+                "scheduler_port": config.scheduler_port,
+            },
         )
         client = Client(address=f"{scheduler_address}:{config.scheduler_port}")
     else:
         logger.info(
-            f"Dask Client and Cluster information"
-            f"\n* {dask_global_config=}"
-            # f"\n* {dask_resources=}"
-            f"\n* CPU Count={cpu_count}"
-            f"\n* Partition Memory={partition_memory / 2 ** 20} MiB"
-            f"\n* Installed memory={(machine_memory + 2 ** 30) / 2 ** 30:.2f} GB"
-            f"\n* Whole Cluster Usable Memory={machine_memory / 2 ** 30:.2f} GB"
-            # f"\n* Worker Usable Memory={config.memory_limit / 2 ** 30:.2f} GB"
-            f"\n* {config=}"
+            "Dask Client and Cluster information"
+            "\n* dask_global_config=%(dask_global_config)s"
+            "\n* CPU Count=%(cpu_count)s"
+            "\n* Partition Memory=%(partition_memory)s MiB"
+            "\n* Installed memory=%(installed_memory).2f GB"
+            "\n* Whole Cluster Usable Memory=%(usable_memory).2f GB"
+            "\n* config=%(config)s",
+            {
+                "dask_global_config": dask_global_config,
+                "cpu_count": cpu_count,
+                "partition_memory": partition_memory / 2**20,
+                "installed_memory": (machine_memory + 2**30) / 2**30,
+                "usable_memory": machine_memory / 2**30,
+                "config": config,
+            },
         )
 
         logger.info(f"Creating new Dask Local Cluster Client")
@@ -250,9 +262,10 @@ def close_dask_client(client: Client) -> None:
 
     if num_tasks > 0:
         logger.info(
-            f"Will not shutdown Dask's scheduler due to {num_tasks} running at the moment."
+            "Will not shutdown Dask's scheduler due to %(num_tasks)d running at the moment.",
+            {"num_tasks": num_tasks},
         )
         return
 
-    logger.info(f"Shutting down dask client. No more pending tasks.")
+    logger.info("Shutting down dask client. No more pending tasks.")
     client.close()

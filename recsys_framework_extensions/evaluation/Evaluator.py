@@ -599,29 +599,50 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             folder_export_results=recommender_baseline_folder,
         )
 
-        list_df_scores_others = [
-            self.evaluate_recommender(
+        list_df_scores_others = []
+        for recommender, recommender_name, recommender_folder in zip(
+            recommender_others,
+            recommender_others_names,
+            recommender_others_folders,
+        ):
+            logger.warning(
+                "Evaluating recommender %(recommender_name)s",
+                {"recommender_name": recommender_name},
+            )
+            results_recommender = self.evaluate_recommender(
                 recommender=recommender,
                 recommender_name=recommender_name,
                 folder_export_results=recommender_folder,
             )[0]
-            for recommender, recommender_name, recommender_folder in zip(
-                recommender_others,
-                recommender_others_names,
-                recommender_others_folders,
-            )
-        ]
+
+            list_df_scores_others.append(results_recommender)
+
+        # TODO: FERNANDO-DEBUGGER. Uncomment or remove.
+        # list_df_scores_others = [
+        #     self.evaluate_recommender(
+        #         recommender=recommender,
+        #         recommender_name=recommender_name,
+        #         folder_export_results=recommender_folder,
+        #     )[0]
+        #     for recommender, recommender_name, recommender_folder in zip(
+        #         recommender_others,
+        #         recommender_others_names,
+        #         recommender_others_folders,
+        #     )
+        # ]
 
         num_other_recommenders = len(list_df_scores_others)
         assert num_other_recommenders >= 1
 
         stats_groupwise = ["friedman"]
         stats_pairwise = [
+            "paired_t_test",
             "wilcoxon",
             "wilcoxon_zsplit",
+            "sign",
+            "bonferroni-paired_t_test",
             "bonferroni-wilcoxon",
             "bonferroni-wilcoxon_zsplit",
-            "sign",
             "bonferroni-sign",
         ]
         inner_stats_groupwise = ["num_measurements", "alpha", "p_value", "hypothesis"]
@@ -633,11 +654,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
             st_tests.StatisticalTestAlternative.GREATER,
         ]
         str_alternatives = [alternative.value for alternative in alternatives]
-        alphas = [
-            # 0.1,
-            0.05,
-            # 0.01,
-        ]
+        alphas = [0.05]
         str_alphas = [str(alpha) for alpha in alphas]
 
         columns_groupwise = [
@@ -751,6 +768,44 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                         )
                     ].append(results_statistical_tests.friedman.num_measurements)
 
+                    # PAIRED T-TEST
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "paired_t_test",
+                            alternative.value,
+                            str(alpha),
+                            "alpha",
+                        )
+                    ] += [alpha] * num_other_recommenders
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "paired_t_test",
+                            alternative.value,
+                            str(alpha),
+                            "p_value",
+                        )
+                    ] += [
+                        res.p_value for res in results_statistical_tests.paired_t_test
+                    ]
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "paired_t_test",
+                            alternative.value,
+                            str(alpha),
+                            "hypothesis",
+                        )
+                    ] += [
+                        res.hypothesis[idx].value
+                        for res in results_statistical_tests.paired_t_test
+                    ]
+
+                    # WILCOXON SIGNED-RANKS TEST - TIES HANDLED BY WILCOX
                     data_pairwise[
                         (
                             cutoff,
@@ -785,7 +840,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                         for res in results_statistical_tests.wilcoxon
                     ]
 
-                    # WILCOXON PAIR-WISE TEST - TIES HANDLED BY ZSPLIT
+                    # WILCOXON SIGNED-RANKS TEST - TIES HANDLED BY ZSPLIT
                     data_pairwise[
                         (
                             cutoff,
@@ -850,7 +905,49 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                         for res in results_statistical_tests.sign
                     ]
 
-                    # BONFERRONI CORRECTION TO WILCOXON PAIR-WISE TEST - TIES HANDLED BY WILCOX
+                    # BONFERRONI CORRECTION TO PAIRED T-TEST
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-paired_t_test",
+                            alternative.value,
+                            str(alpha),
+                            "alpha",
+                        )
+                    ] += [
+                        results_statistical_tests.bonferroni_paired_t_test.corrected_alphas[
+                            idx
+                        ]
+                    ] * num_other_recommenders
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-paired_t_test",
+                            alternative.value,
+                            str(alpha),
+                            "p_value",
+                        )
+                    ] += [
+                        p_val
+                        for p_val in results_statistical_tests.bonferroni_paired_t_test.corrected_p_values
+                    ]
+                    data_pairwise[
+                        (
+                            cutoff,
+                            metric,
+                            "bonferroni-paired_t_test",
+                            alternative.value,
+                            str(alpha),
+                            "hypothesis",
+                        )
+                    ] += [
+                        h[idx].value
+                        for h in results_statistical_tests.bonferroni_paired_t_test.hypothesis
+                    ]
+
+                    # BONFERRONI CORRECTION TO WILCOXON SIGNED-RANKS TEST - TIES HANDLED BY WILCOX
                     data_pairwise[
                         (
                             cutoff,
@@ -892,7 +989,7 @@ class ExtendedEvaluatorHoldout(EvaluatorHoldout, ParquetDataMixin, NumpyDictData
                         for h in results_statistical_tests.bonferroni_wilcoxon.hypothesis
                     ]
 
-                    # BONFERRONI CORRECTION TO WILCOXON PAIR-WISE TEST - TIES HANDLED BY ZSPLIT
+                    # BONFERRONI CORRECTION TO WILCOXON SIGNED-RANKS TEST - TIES HANDLED BY ZSPLIT
                     data_pairwise[
                         (
                             cutoff,

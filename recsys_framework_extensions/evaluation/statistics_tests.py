@@ -1,13 +1,16 @@
 from enum import Enum
+import abc
 import logging
-from typing import Optional, Sequence, Iterable
+from typing import Optional, Sequence, Iterable, cast
 
 import attrs
 import numpy as np
 import statsmodels.api as sm
+import scikit_posthocs as sp
 from scipy import stats
 
-from scipy.stats._binomtest import BinomTestResult  # type: ignore
+# from scipy.stats._binomtest import BinomTestResult  # type: ignore
+from scipy.stats._result_classes import TtestResult, BinomTestResult
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,17 @@ _CONFIDENCE_INTERVAL_CONFIDENCE = 0.95
 _BOOTSTRAPING_NUM_TRIES = 100
 _HYPOTHESIS_ALTERNATIVE = "ALTERNATIVE"
 _HYPOTHESIS_NULL = "NULL"
+
+
+@attrs.define
+class _ScipyTTestResult(abc.ABC):
+    statistic: float = attrs.field()
+    pvalue: float = attrs.field()
+    df: int = attrs.field()
+
+    @abc.abstractmethod
+    def confidence_interval(self, confidence_level=0.95) -> tuple[float, float]:
+        ...
 
 
 @attrs.define
@@ -79,6 +93,20 @@ class ResultsFriedmanTest:
 
 
 @attrs.define
+class ResultsNemenyiTest:
+    p_values: np.ndarray = attrs.field()
+
+
+@attrs.define
+class ResultsPairedTTest:
+    test_statistic: float = attrs.field()
+    dof: float = attrs.field()
+    p_value: float = attrs.field()
+    hypothesis: Sequence[StatisticalTestHypothesis] = attrs.field()
+    kwargs: dict = attrs.field()
+
+
+@attrs.define
 class ResultsWilcoxonTest:
     test_statistic: float = attrs.field()
     p_value: float = attrs.field()
@@ -108,13 +136,17 @@ class ResultsBonferroniCorrection:
 
 @attrs.define
 class ResultsStatisticalTestsBaseVsOthers:
+    # TODO: Nemenyi test uses a lot of memory (~35GB for the CW Impressions dataset). Uncomment when needed.
     friedman: ResultsFriedmanTest = attrs.field()
-    bonferroni_wilcoxon: ResultsBonferroniCorrection = attrs.field()
-    bonferroni_wilcoxon_zsplit: ResultsBonferroniCorrection = attrs.field()
-    bonferroni_sign: ResultsBonferroniCorrection = attrs.field()
+    # nemenyi: ResultsNemenyiTest = attrs.field()
+    paired_t_test: Sequence[ResultsPairedTTest] = attrs.field()
     wilcoxon: Sequence[ResultsWilcoxonTest] = attrs.field()
     wilcoxon_zsplit: Sequence[ResultsWilcoxonTest] = attrs.field()
     sign: Sequence[ResultsSignTest] = attrs.field()
+    bonferroni_paired_t_test: ResultsBonferroniCorrection = attrs.field()
+    bonferroni_wilcoxon: ResultsBonferroniCorrection = attrs.field()
+    bonferroni_wilcoxon_zsplit: ResultsBonferroniCorrection = attrs.field()
+    bonferroni_sign: ResultsBonferroniCorrection = attrs.field()
 
 
 def _get_final_hypothesis(
@@ -169,6 +201,20 @@ def compute_statistical_tests_of_base_vs_others(
         alphas=alphas,
     )
 
+    # results_nemenyi = _posthoc_nemenyi_statistical_test(
+    #     scores=scores,
+    # )
+
+    results_paired_t_test = [
+        _paired_t_statistical_test(
+            scores_base=scores_base,
+            scores_other=scores_others[idx_recommender, :],
+            alphas=alphas,
+            alternative=alternative,
+        )
+        for idx_recommender in range(num_other_recommenders)
+    ]
+
     results_wilcoxon_wilcox = [
         _wilcoxon_statistic_test(
             scores_base=scores_base,
@@ -200,6 +246,10 @@ def compute_statistical_tests_of_base_vs_others(
         for idx_recommender in range(num_other_recommenders)
     ]
 
+    p_values_paired_t_test = np.asarray(
+        [res.p_value for res in results_paired_t_test],
+        dtype=np.float64,
+    )
     p_values_wilcoxon_wilcox = np.asarray(
         [res.p_value for res in results_wilcoxon_wilcox],
         dtype=np.float64,
@@ -213,6 +263,10 @@ def compute_statistical_tests_of_base_vs_others(
         dtype=np.float64,
     )
 
+    results_bonferroni_paired_t_test = _bonferroni_correction(
+        p_values=p_values_paired_t_test,
+        alphas=alphas,
+    )
     results_bonferroni_wilcoxon_wilcox = _bonferroni_correction(
         p_values=p_values_wilcoxon_wilcox,
         alphas=alphas,
@@ -228,12 +282,61 @@ def compute_statistical_tests_of_base_vs_others(
 
     return ResultsStatisticalTestsBaseVsOthers(
         friedman=results_friedman,
+        # nemenyi=results_nemenyi,
+        paired_t_test=results_paired_t_test,
         wilcoxon=results_wilcoxon_wilcox,
         wilcoxon_zsplit=results_wilcoxon_zsplit,
         sign=results_sign,
+        bonferroni_paired_t_test=results_bonferroni_paired_t_test,
         bonferroni_wilcoxon=results_bonferroni_wilcoxon_wilcox,
         bonferroni_wilcoxon_zsplit=results_bonferroni_wilcoxon_zsplit,
         bonferroni_sign=results_bonferroni_sign,
+    )
+
+
+def _paired_t_statistical_test(
+    scores_base: np.ndarray,
+    scores_other: np.ndarray,
+    alphas: Sequence[float],
+    alternative: StatisticalTestAlternative,
+) -> ResultsPairedTTest:
+    assert scores_base.ndim == 1
+    assert scores_other.ndim == 1
+    assert scores_base.shape == scores_other.shape
+
+    num_scores = scores_base.size
+
+    if num_scores < 30:
+        logger.warning(
+            "The Paired T-test requires the scores to follow a Normal distribution or a large sample."
+            " We received a sample smaller than 30 (got %(num_scores)s), so ensure scores follow a normal distribution",
+            {"num_scores": num_scores},
+        )
+
+    ttest_result = cast(
+        _ScipyTTestResult,
+        stats.ttest_rel(
+            a=scores_other,
+            b=scores_base,
+            nan_policy="raise",
+            alternative=alternative.value,
+        ),
+    )
+
+    hypothesis = _get_final_hypothesis(
+        p_value=ttest_result.pvalue,
+        alphas=alphas,
+    )
+
+    return ResultsPairedTTest(
+        test_statistic=ttest_result.statistic,
+        p_value=ttest_result.pvalue,
+        dof=ttest_result.df,
+        hypothesis=hypothesis,
+        kwargs={
+            "alternative": alternative,
+            "alphas": alphas,
+        },
     )
 
 
@@ -245,9 +348,14 @@ def _wilcoxon_statistic_test(
     zero_method: WilcoxonTestHandleTies,
 ) -> ResultsWilcoxonTest:
     """
+    Computes the Wilcoxon's Signed-Ranks tests using the function `scipy.stats.wilcoxon`.
 
     Notes
     -----
+    This method allows to compute pair-wise statistical tests following the guidelines described by Janez Demšar in the
+    paper "Statistical Comparisons of Classifiers over Multiple Data Sets", section 3.1.3.
+    To achieve this, ensure the following parameters `alternative = "two-sided"` and `zero_method = WilcoxonTestHandleTies.ZSPLIT`
+
     alternative="two-sided":
       H0: differences in scores are close to zero,
       Ha: differences in scores are not close to zero. Does not tell you which one is better.
@@ -335,8 +443,6 @@ def _wilcoxon_statistic_test(
     test_statistic, p_value = stats.wilcoxon(
         x=scores_other,
         y=scores_base,
-        # x=scores_base,  # TODO: DEBUG, DELETE AND UNCOMMENT ABOVE
-        # y=scores_other,  # TODO: DEBUG, DELETE AND UNCOMMENT ABOVE
         alternative=alternative.value,
         zero_method=zero_method.value,
         method="auto",
@@ -440,7 +546,7 @@ def _friedman_chi_square_statistical_test(
         Ha (alternative hypothesis):
             The scores across recommenders are different
 
-    This method requires the comparison of at least 7 recommenders and 10 users so the p-value is reliable.
+    This method requires the comparison of at least 7 recommenders and 10 users for the p-value to be reliable.
     """
     assert scores.ndim == 2
     num_recommenders, num_users = scores.shape
@@ -451,8 +557,12 @@ def _friedman_chi_square_statistical_test(
     if num_recommenders <= 6 or num_users <= 10:
         p_value_reliable = False
         logger.warning(
-            f"The method `stats.friedmanchisquare` requires the comparison of at least 7 recommenders "
-            f"(got {num_recommenders}) and at least 10 users (got {num_users}). "
+            "The method `stats.friedmanchisquare` requires the comparison of at least 7 recommenders "
+            "(got %(num_recommenders)s) and at least 10 users (got %(num_users)s). ",
+            {
+                "num_recommenders": num_recommenders,
+                "num_users": num_users,
+            },
         )
 
     # Implementation note: the function `stats.friedmanchisquare` requires each array of recommender scores (vector
@@ -476,6 +586,20 @@ def _friedman_chi_square_statistical_test(
         kwargs=dict(
             alphas=alphas,
         ),
+    )
+
+
+def _posthoc_nemenyi_statistical_test(
+    scores: np.ndarray,
+) -> ResultsNemenyiTest:
+    df_p_values = sp.posthoc_nemenyi_friedman(
+        a=scores,
+        melted=False,
+        sort=False,
+    )
+
+    return ResultsNemenyiTest(
+        p_values=df_p_values.to_numpy(),
     )
 
 
@@ -523,6 +647,10 @@ def _sign_test(
 
     Notes
     -----
+    This method allows to compute pair-wise statistical tests following the guidelines described by Janez Demšar in the
+    paper "Statistical Comparisons of Classifiers over Multiple Data Sets", section 3.1.4.
+    To achieve this, ensure the following parameters `alternative = "two-sided"` and `zero_method = SignTestHandleTies.ZSPLIT`
+
     :class:`SignTestHandleTies.STRICTLY_GREATER` makes draws to be counted towards the null hypothesis. This makes
     *harder* for the test to reject the null hypothesis.
 
@@ -708,16 +836,16 @@ def _bonferroni_correction(
         corrected_p_values=corrected_p_values,
         corrected_alphas=corrected_alphas,
         hypothesis=hypothesis,
-        kwargs=dict(
-            p_values=p_values,
-            alphas=alphas,
-        ),
+        kwargs={
+            "p_values": p_values,
+            "alphas": alphas,
+        },
     )
 
 
 def calculate_confidence_intervals_on_scores_mean(
     scores: np.ndarray,
-    alpha: float = None,
+    alpha: Optional[float] = None,
 ) -> ComputedConfidenceInterval:
     """
 

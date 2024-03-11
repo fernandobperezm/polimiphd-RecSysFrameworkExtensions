@@ -61,6 +61,81 @@ class TestStatisticalTests:
             ),
         ],
     )
+    def test_paired_t_test(
+        self,
+        recommender_scores_from_zero_to_point2: np.ndarray,
+        recommender_scores_from_point6_to_one: np.ndarray,
+        test_alternative: StatisticalTestAlternative,
+        expected_hypothesis: StatisticalTestHypothesis,
+    ):
+        # Arrange
+        test_alphas = [0.05]
+        scores_base = recommender_scores_from_zero_to_point2.astype(
+            dtype=np.float64,
+        )
+        scores_others = np.vstack(
+            (
+                recommender_scores_from_point6_to_one,
+                recommender_scores_from_point6_to_one,
+                recommender_scores_from_point6_to_one,
+                recommender_scores_from_point6_to_one,
+            ),
+        ).astype(
+            dtype=np.float64,
+        )
+
+        # Act
+        results_statistical_tests: ResultsStatisticalTestsBaseVsOthers = (
+            compute_statistical_tests_of_base_vs_others(
+                scores_base=scores_base,
+                scores_others=scores_others,
+                alphas=test_alphas,
+                alternative=test_alternative,
+            )
+        )
+
+        # Assert
+        for results in results_statistical_tests.paired_t_test:
+            p_value = results.p_value
+            hypothesis = results.hypothesis
+
+            assert np.all(np.array(hypothesis) == expected_hypothesis)
+            assert (
+                np.all(StatisticalTestHypothesis.NULL == np.array(hypothesis))
+                and np.all(p_value > np.asarray(test_alphas))
+            ) or (
+                np.all(StatisticalTestHypothesis.ALTERNATIVE == np.array(hypothesis))
+                and np.all(p_value <= np.asarray(test_alphas))
+            )
+            assert (
+                np.all(StatisticalTestHypothesis.NULL == np.array(hypothesis))
+                and StatisticalTestAlternative.LESS == test_alternative
+            ) or (
+                np.all(StatisticalTestHypothesis.ALTERNATIVE == np.array(hypothesis))
+                and test_alternative
+                in [
+                    StatisticalTestAlternative.TWO_SIDED,
+                    StatisticalTestAlternative.GREATER,
+                ]
+            )
+
+    @pytest.mark.parametrize(
+        "test_alternative,expected_hypothesis",
+        [
+            (
+                StatisticalTestAlternative.TWO_SIDED,
+                StatisticalTestHypothesis.ALTERNATIVE,
+            ),
+            (
+                StatisticalTestAlternative.GREATER,
+                StatisticalTestHypothesis.ALTERNATIVE,
+            ),
+            (
+                StatisticalTestAlternative.LESS,
+                StatisticalTestHypothesis.NULL,
+            ),
+        ],
+    )
     def test_wilcoxon(
         self,
         recommender_scores_from_zero_to_point2: np.ndarray,
