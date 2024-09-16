@@ -8,7 +8,7 @@ exclude = [{ path = "build/*" }]
 
 [tool.poetry.dependencies]
 python = "~3.10"
-recsys-framework-public = { path = "../RecSysFramework_public/", develop = false } # Use this when publishing the repo.
+recsys-framework-public = { path = "../RecSysFramework_public/", develop = true } # Use this when publishing the repo.
 attrs = "^23.1.0"
 dask = { extras = ["complete"], version = "^2023.6.1" }
 distributed = "^2023.6.1"

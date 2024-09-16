@@ -2331,7 +2331,7 @@ description = ""
 optional = false
 python-versions = "~3.10"
 files = []
-develop = false
+develop = true
 
 [package.dependencies]
 Cython = "0.29.36"
@@ -3195,4 +3195,4 @@ email-gmail = ["google-api-python-client", "google-auth-httplib2", "google-auth-
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.10"
-content-hash = "4d27ef902ad08b2191123afcc48c12ad2244eff21ce2bba5b23d31cc5099ea77"
+content-hash = "24265602ba7c8c54344e730e797b564bf12ea873498af351d1c8089488474fb1"
